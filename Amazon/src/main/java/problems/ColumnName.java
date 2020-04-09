@@ -1,7 +1,7 @@
 package problems;
 
 public class ColumnName {
-	
+//	Given a column number, find its corresponding Excel column name.
 	public static String getColumnName(int columnNumber) {
 		String name = "";
 		int division = 26;
