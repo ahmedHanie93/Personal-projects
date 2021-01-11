@@ -1,9 +1,12 @@
-package Main;
+package practice;
 
 import Codility.PrefixSumLesson;
 
-public class Main {
-
+/**
+ * Hello world!
+ *
+ */
+public class App {
   public static void main(String[] args) {
     // int[][] arr = {{259, 770}, {448, 54}, {926, 667}, {184, 139}, {840, 118}, {577, 469}};
     // System.out.println(TwoCityScheduling.twoCitySchedCost(arr));
@@ -18,5 +21,4 @@ public class Main {
     Utils.printIntArray(PrefixSumLesson.getGenomicRangeQuery("CAGCCTA", P, Q));
     // System.out.println("Binary Gap is: " + BinaryGap.getBinaryGap(561892));
   }
-
 }

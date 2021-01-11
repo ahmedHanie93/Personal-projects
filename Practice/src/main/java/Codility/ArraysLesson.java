@@ -2,7 +2,7 @@ package Codility;
 
 import java.util.HashMap;
 import java.util.Map;
-import Main.Utils;
+import practice.Utils;
 
 public class ArraysLesson {
 
