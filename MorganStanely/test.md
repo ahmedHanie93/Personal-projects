@@ -1,174 +1,200 @@
-# RFC: Migration Strategy from ForgeRock to Human Identity Service (HIS)
+```markdown
+# RFC: Unified Identity Migration from ForgeRock to Human Identity Service (HIS)
 
-## 📚 Table of Contents
+## Status
+**Proposed**  
+**Last Updated**: 2023-11-20  
+**Owners**: Identity Team  
 
-* [Goals](#-goals)
-* [Problem Statement](#-problem-statement)
-* [High-Level Architecture](#-high-level-architecture)
-* [Components](#-components)
-* [Migration Phases](#-migration-phases)
-* [Success Criteria](#-success-criteria)
-* [ADRs Summary](#-adrs-summary)
-* [Migration API](#-migration-api)
-* [Conflict Resolution](#-conflict-resolution)
-* [Migration Checklist](#-migration-checklist)
+## 1. Motivation
 
----
+### Problem Statement
+- Dual identity storage in ForgeRock (FR) and HIS creates synchronization challenges
+- HIS is designated as the strategic source of truth but lacks legacy user data
+- Complex identity linkages (social logins via `aliasList`, multi-client access) require careful migration
 
-## 📌 Goals
+### Goals
+1. Migrate 100% of users to HIS without service disruption
+2. Preserve all identity relationships (social logins, entitlements)
+3. Maintain backward compatibility during transition period
+4. Establish HIS as the single source of truth for identity data
 
-* Establish HIS as the **single source of truth** for all identity and authentication data.
-* Provide **persona-based identity modeling** with contextual entitlements.
-* Enable **seamless migration** of users from ForgeRock (FR) to HIS.
-* Preserve **identity linkages** across client contexts and social providers.
-* Ensure **zero downtime**, data consistency, and forward compatibility.
+## 2. Technical Design
 
----
-
-## ❗ Problem Statement
-
-ForgeRock is currently the central identity provider, handling user creation, authentication, and storage. However:
-
-* FR lacks the concept of **personas** and contextual entitlement isolation.
-* It cannot **intelligently consolidate** users across social providers.
-* FR is a SaaS-managed system, limiting **customization and resilience**.
-* **HIS** offers deeper identity modeling, control over data, and supports multi-client identity relationships.
-
----
-
-## 🔧 High-Level Architecture
-
+### Architecture Overview
 ```plantuml
 @startuml
-skinparam linetype ortho
-actor "Applications" as App
-actor "Social IdPs" as IdPs
-rectangle "ForgeRock Adapter" as Adapter
-rectangle "HIS Service" as HIS {
-  database "HIS Database" as DB
-}
-App --> HIS
-IdPs --> Adapter
-Adapter <--> HIS
-HIS --> DB
+skinparam BackgroundColor #FFF
+skinparam DefaultFontColor #000
+
+component "Applications" as app
+component "HIS Service" as his
+database "HIS DB" as db
+component "FR Sync Adapter" as sync
+component "ForgeRock" as fr
+
+app -right-> his : All write operations
+his --> db : CRUD operations
+his -> sync : Change notifications
+sync -> fr : Limited attribute sync
+fr --> sync : Read-only migration access
 @enduml
 ```
 
----
+### Core Components
 
-## 🧩 Components
-
-| Component         | Description                                         |
-| ----------------- | --------------------------------------------------- |
-| **Identity**      | Global object per user                              |
-| **Persona**       | Context-specific view of user (PDP, Embedded, etc.) |
-| **Alias**         | Social identity mapping (Google, Facebook)          |
-| **FR Adapter**    | Handles interim syncs from FR to HIS                |
-| **Migration API** | Just-in-time and batch user migration               |
-
----
-
-## 🔄 Migration Phases
-
-1. **Phase 1**: New user registrations go to HIS only.
-2. **Phase 2**: On-the-fly migration for existing FR users.
-3. **Phase 3**: Scheduled background syncs from FR to HIS.
-4. **Phase 4**: All writes/read operations move to HIS.
-5. **Phase 5**: FR disabled for identity operations.
-
----
-
-## ✅ Success Criteria
-
-* All active identities created or migrated to HIS.
-* All social identities mapped as separate HIS personas.
-* No user or entitlement loss during migration.
-* Identity APIs updated across client applications.
-
----
-
-## 📄 ADRs Summary
-
-### ADR 001: Make HIS the Source of Truth
-
-* **Decision**: All future identity flows move to HIS.
-* **Rationale**: FR lacks support for personas, flexibility.
-
-### ADR 002: Represent Each Social Identity as Separate Persona
-
-* **Decision**: Use social provider + subject as unique persona.
-* **Rationale**: Ensures identity consolidation, entitlement isolation.
-
-### ADR 003: Migrate FR Users On-the-Fly
-
-* **Decision**: Check FR during login if user missing in HIS.
-* **Rationale**: Avoids need for a big bang migration.
-
-### ADR 004: Maintain Legacy FR IDs Temporarily
-
-* **Decision**: Store FR IDs in HIS metadata during transition.
-* **Rationale**: Maintains backward compatibility.
-
-### ADR 005: Derive Client Context from Login Metadata
-
-* **Decision**: Detect PDP, Embedded Banking, etc., from request signals.
-* **Rationale**: Supports accurate persona creation.
-
----
-
-## ✅ Migration API
-
-`POST /identities/migrate-from-fr`
-
+#### Migration API (`POST /v1/migrate-from-fr`)
 ```json
 {
-  "frUserId": "uuid",
+  "frUserId": "uuidv4",
   "clientContext": "detected/client",
-  "migrationType": "SOCIAL|PRIMARY"
+  "aliasList": [
+    {"provider": "google", "subject": "123"},
+    {"provider": "facebook", "subject": "456"}
+  ]
 }
 ```
 
----
-
-## 🔁 Conflict Resolution
-
-```python
-def resolve_conflict(his_data, fr_data):
-  core_fields = ['email', 'phone']
-  for field in core_fields:
-    if his_data.get(field) != fr_data.get(field):
-      return his_data[field]  # HIS wins
-
-  session_fields = ['lastLogin', 'loginCount']
-  for field in session_fields:
-    if fr_data.get(field):
-      return fr_data[field]  # FR wins for session
+**Response**:
+```json
+{
+  "identityId": "his-uuid",
+  "personas": ["primary-uuid", "google-uuid"],
+  "warnings": []
+}
 ```
 
----
+#### Client Context Detection Logic
+```plantuml
+@startuml
+skinparam BackgroundColor #FFF
+skinparam DefaultFontColor #000
 
-## 🧠 Persona Mapping Table
+start
+:Login Request;
+if (OTP Enabled?) then (yes)
+    :Set context="PDP";
+else (no)
+    :Query Entitlements;
+    if (Corporate Entitlements?) then (yes)
+        :Set context="Corporate";
+    else (no)
+        :Check HTTP Headers;
+        if (Referrer =~ /embedded/) then (yes)
+            :Set context="EmbeddedBanking";
+        else (no)
+            :Default to "Payeeweb";
+        endif
+    endif
+endif
+:Persist to Persona;
+stop
+@enduml
+```
 
-| Type    | Source      | Example                                   | HIS Persona Type | Notes                      |
-| ------- | ----------- | ----------------------------------------- | ---------------- | -------------------------- |
-| Primary | FR Email    | [user@domain.com](mailto:user@domain.com) | PRIMARY          | Core login method          |
-| Social  | Google ID   | sub: abc123                               | SOCIAL           | Linked via aliasList       |
-| Social  | Facebook ID | sub: fb456                                | SOCIAL           | Linked via aliasList       |
-| Client  | PDP OTP     | Derived from metadata                     | PDP Persona      | Has OTP / PDP entitlements |
+### Data Mapping Table
 
----
+| FR Attribute       | HIS Field               | Transformation Rule                     |
+|--------------------|-------------------------|-----------------------------------------|
+| `userName`         | `identity.primaryKey`   | Use email if available, else FR UUID    |
+| `aliasList`        | `personas[]`            | Create one persona per social provider  |
+| `email`           | `persona.email`         | Direct copy with validation            |
+| `lastLogin`       | `persona.lastActive`   | Only for active personas               |
 
-## ✅ Migration Checklist
+## 3. Migration Phases
 
-* [ ] HIS service accepts and stores new user registrations
-* [ ] Social identities mapped as distinct personas
-* [ ] On-the-fly login migration in place
-* [ ] Scheduled sync jobs implemented
-* [ ] Logging and metrics dashboard ready
-* [ ] Conflict handling logic deployed and verified
-* [ ] Rollback plan documented and tested
-* [ ] All clients integrated with HIS identity APIs
+### Phase 0: Preparation
+- [ ] Backfill HIS with FR user metadata (read-only mode)
+- [ ] Deploy Migration API in HIS
+- [ ] Instrument client context detection
 
----
+### Phase 1: Live Migration
+```plantuml
+@startuml
+skinparam BackgroundColor #FFF
+skinparam DefaultFontColor #000
 
-End of RFC
+group "First New-Journey Login"
+    User -> App: Attempts login
+    App -> HIS: Checks existence
+    alt Not Found
+        HIS -> FR: fetchUser(frUserId)
+        FR --> HIS: User data
+        HIS -> HIS: migrateFromFR()
+        HIS --> App: Identity created
+    end
+end
+@enduml
+```
+
+### Phase 2: Cleanup (After 30 Days)
+- [ ] Disable FR write paths
+- [ ] Remove sync adapter
+- [ ] Archive FR user data
+
+## 4. Corner Cases & Mitigations
+
+| Scenario                          | Solution                                  | Risk Level |
+|-----------------------------------|-------------------------------------------|------------|
+| Duplicate emails in FR            | Merge with admin notification             | High       |
+| Orphaned social logins            | Preserve as unverified personas           | Medium     |
+| Undetectable client context       | Default to "Payeeweb" + manual override   | Low        |
+
+## 5. Success Metrics
+
+| Metric                          | Target            | Measurement Method               |
+|---------------------------------|-------------------|-----------------------------------|
+| New users in HIS                | 100%              | Auth logs analysis               |
+| Legacy user migration           | 95% in 3 months   | Migration API logs               |
+| Entitlement conflicts           | 0%                | Post-migration validation scripts|
+
+## 6. Follow-Up ADRs
+
+### ADR-001: HIS as Source of Truth
+**Decision**: All writes route to HIS; FR becomes read-only cache  
+**Consequences**:
+- Requires dual-write during transition
+- HIS must support all FR use cases
+
+### ADR-002: Persona-Based Identity Model
+```plantuml
+@startuml
+skinparam BackgroundColor #FFF
+skinparam DefaultFontColor #000
+
+object "Identity" as ident {
+  id = "123"
+}
+
+object "Primary Persona" as pp {
+  type = "EMAIL"
+  email = "user@domain.com"
+}
+
+object "Social Persona" as sp {
+  type = "GOOGLE"
+  subject = "google-id"
+}
+
+ident --> pp
+ident --> sp
+@enduml
+```
+
+## 7. Open Questions
+1. How to handle legally-mandated data locality requirements?
+2. Should we maintain FR as a cold backup?
+
+## 8. Appendix
+- [FR Schema Documentation](#)
+- [HIS API Spec](#)
+``` 
+
+This RFC template:
+1. Uses clear sections with decision points
+2. Embeds PlantUML diagrams where visual explanation helps
+3. Includes structured tables for data mapping and metrics
+4. Links to follow-up ADRs for major decisions
+5. Identifies open questions for stakeholder input
+
+Would you like me to add any specific implementation details or modify the structure?
