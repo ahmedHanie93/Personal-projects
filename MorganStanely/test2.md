@@ -118,14 +118,16 @@ ident --> fb : Social link
    @startuml
    skinparam BackgroundColor #FFF
    skinparam DefaultFontColor #000
-   rectangle "Unknown Context" as unknown {
-     component "User\nwithout OTP" as user
-     component "No corporate\nentitlements" as noent
-     component "No referrer\nheader" as noref
+   
+   rectangle "Unknown Context" {
+   component "User\nwithout OTP"
+   component "No corporate\nentitlements"
+   component "No referrer\nheader"
+   
+   "User\nwithout OTP" --> "No corporate\nentitlements"
+   "No corporate\nentitlements" --> "No referrer\nheader"
+   "No referrer\nheader" --> "Default to\nPayeeweb?"
    }
-   user --> noent
-   noent --> noref
-   noref --> "Default to\nPayeeweb?" as q1
    @enduml
    ```
 
@@ -139,16 +141,21 @@ ident --> fb : Social link
    @startuml
    skinparam BackgroundColor #FFF
    skinparam DefaultFontColor #000
+   
    left to right direction
-   card "Pros" as p {
-    * Faster session recovery
-    * Fallback mechanism
+   
+   rectangle "Pros" as p {
+   text="Faster session recovery"
+   text="Fallback mechanism"
    }
-   card "Cons" as c {
-    * Additional sync complexity
-    * Data drift risk
+   
+   rectangle "Cons" as c {
+   text="Additional sync complexity"
+   text="Data drift risk"
    }
-   p --> c : Tradeoff analysis
+   
+   p -[hidden]-> c
+   note on link: Tradeoff analysis
    @enduml
    ```
 
@@ -162,10 +169,16 @@ ident --> fb : Social link
    @startuml
    skinparam BackgroundColor #FFF
    skinparam DefaultFontColor #000
+   
    state "Migration Failed" as fail
-   fail --> "Maintain FR account" : Option 1
-   fail --> "Create new HIS identity" : Option 2
-   fail --> "Manual intervention" : Option 3
+   state "Maintain FR account" as opt1
+   state "Create new HIS identity" as opt2
+   state "Manual intervention" as opt3
+   
+   [*] --> fail
+   fail --> opt1 : Option 1
+   fail --> opt2 : Option 2
+   fail --> opt3 : Option 3
    @enduml
    ```
 
@@ -214,7 +227,7 @@ HIS --> "Auth Service": Identity token
 |----------|---------------|----------|
 | Full FR decommissioning | Cost savings vs fallback need | Q2 2025 |
 | Multi-region persona support | Data residency requirements | Q3 2025 |
-```
+
 
 ## Key Improvements:
 1. **Complete visual documentation** - All critical flows now have PlantUML diagrams
@@ -229,5 +242,3 @@ HIS --> "Auth Service": Identity token
 3. **Prototype migration API** with error handling scenarios
 4. **Establish compliance review** for data residency requirements
 5. **Create test matrix** for social account merging scenarios
-
-Would you like me to focus on any specific section for deeper technical elaboration?
