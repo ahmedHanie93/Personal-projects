@@ -214,27 +214,6 @@ note bottom of m3
   <b>Milestone: Full Unification</b>
   2024-12-31
 end note
-@enduml```
-
-#### Journey Unification Roadmap
-```plantuml
-@startuml
-gantt
-  title Journey Unification Timeline
-  dateFormat  YYYY-MM-DD
-  axisFormat  %b %Y
-  
-  [Current State] : 2023-11-01, 60d
-  section Phase 1
-  Social unification : active, after end, 90d
-  section Phase 2
-  Customer adoption : after Social unification, 90d
-  section Future State
-  Unified configurable journey : after Customer adoption, 0d
-  section Milestones
-  PDP migration complete : milestone, 2024-01-31, 0d
-  All brands on default_Federation : milestone, 2024-06-30, 0d
-  Full unification : milestone, 2024-12-31, 0d
 @enduml
 ```
 
