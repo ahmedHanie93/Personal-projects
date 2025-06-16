@@ -1,244 +1,217 @@
-# RFC: Unified Identity Migration from ForgeRock to Human Identity Service (HIS)
+## Goals
 
-## 1. Technical Design
+* Establish HIS as the *single source of truth* for all identity and authentication data.
+* Provide *persona-based identity modeling* with customer-specific entitlements.
+* Enable *seamless migration* of users from ForgeRock (FR) to HIS.
+* Preserve *identity linkages* across client brands and social providers.
+* Ensure *zero downtime*, data consistency, and forward compatibility.
+
+## Problem Statement
+
+ForgeRock is currently the central identity provider, handling user creation, authentication, and storage. However:
+
+* FR lacks the concept of *personas* and customer-specific entitlement isolation.
+* FR is a SaaS-managed system, limiting *customization and resilience*.
+* HIS offers deeper identity modeling, control over data, and supports multi-client identity relationships.
+
+## Design Goals & Key Concerns
+
+These are the top priorities and risks that the migration and HIS adoption must address:
+
+1. **Journey Migration (PDP → default\_Federation)**
+   Ensuring a seamless and transparent transition of login journeys for PDP users into a unified experience.
+
+2. **HIS Data & PUPEE Profile Sync**
+   HIS must not only persist PDP users' identities but also handle profile creation and syncing with PUPEE in a reliable and standardized way.
+
+3. **Password Storage Transition**
+   Migrate password storage from ForgeRock SaaS to the new authentication service.
+   🔁 Option: Re-invite users with password reset to simplify the transition.
+
+## Technical Design
 
 ### Architecture Overview
-```plantuml
-@startuml
-skinparam BackgroundColor #FFF
-skinparam DefaultFontColor #000
 
-component "Applications" as app
-component "HIS Service" as his
-database "HIS DB" as db
-component "FR Sync Adapter" as sync
-component "ForgeRock" as fr
-
-app -right-> his : All write operations
-his --> db : CRUD operations
-his -> sync : Change notifications
-sync -> fr : Limited attribute sync
-fr --> sync : Read-only migration access
-
-note right of db
-  **HIS is source of truth**
-  - Full user profiles
-  - Identity relationships
-  - Entitlement mappings
-end note
-@enduml
+```mermaid
+sequenceDiagram
+    actor User
+    participant FR as ForgeRock
+    participant HIS
+    participant DB as HIS Database
+    User ->> FR: Login Request
+    activate FR
+    FR ->> HIS: Authenticate
+    activate HIS
+    alt New Identity
+        HIS ->> DB: Create Identity + Personas
+    else Existing Identity
+        HIS ->> DB: Update Persona
+    end
+    HIS -->> FR: Auth Result
+    deactivate HIS
+    FR -->> User: Access Token
+    deactivate FR
 ```
 
-### Client Context Detection Logic
-```plantuml
-@startuml
-skinparam BackgroundColor #FFF
-skinparam DefaultFontColor #000
+### Client Detection Logic
 
-start
-:Login Request;
-if (OTP Enabled?) then (yes)
-    :Set context="PDP";
-else (no)
-    :Query Entitlements;
-    if (Corporate Entitlements?) then (yes)
-        :Set context="Corporate";
-    else (no)
-        :Check HTTP Headers;
-        if (Referrer =~ /embedded/) then (yes)
-            :Set context="EmbeddedBanking";
-        else (no)
-            :Default to "Payeeweb";
-        endif
-    endif
-endif
-:Persist to Persona;
-stop
-@enduml
+```mermaid
+flowchart TD
+    Start[Login Request] --> OTP{OTP Enabled?}
+    OTP -->|Yes| PDP[Set brand='PDP']
+    OTP -->|No| Entitlements{Corporate Entitlements?}
+    Entitlements -->|Yes| Corporate[Set brand='Corporate']
+    Entitlements -->|No| Referrer{Embedded Referrer?}
+    Referrer -->|Yes| Embedded[Set brand='EmbeddedBanking']
+    Referrer -->|No| Default[Set brand='Payeeweb']
+    PDP --> Persist[Persist to Persona]
+    Corporate --> Persist
+    Embedded --> Persist
+    Default --> Persist
 ```
 
 ### Migration Workflow
-```plantuml
-@startuml
-skinparam BackgroundColor #FFF
-skinparam DefaultFontColor #000
 
-group "First New-Journey Login"
-    User -> App: Attempts login
-    App -> HIS: Checks existence
+```mermaid
+sequenceDiagram
+    actor User
+    participant FR
+    participant HIS
+    participant FRAdapter
+    User ->> FR: Login
+    FR ->> HIS: Identity Check
     alt Not Found
-        HIS -> FR: fetchUser(frUserId)
-        FR --> HIS: User data + aliasList
-        HIS -> HIS: createIdentity()
-        HIS -> HIS: createPersonas()
-        HIS --> App: Identity created
-    else Found
-        HIS --> App: Existing identity
+        HIS ->> FRAdapter: getUserByEmail()
+        FRAdapter ->> FR: Request
+        FR -->> FRAdapter: User + aliasList
+        FRAdapter -->> HIS: Data
+        HIS ->> HIS: createIdentity()
+        loop For each alias
+            HIS ->> HIS: createSocialPersona()
+        end
+        HIS ->> HIS: createPrimaryPersona()
     end
-end
-@enduml
+    HIS -->> FR: Identity Token
+    FR -->> User: Access
 ```
 
 ### Social Account Linking
-```plantuml
-@startuml
-skinparam BackgroundColor #FFF
-skinparam DefaultFontColor #000
 
-package "HIS Identity" {
-    [Identity\nID:123] as ident
-    [Persona\nPrimary] as primary
-    [Persona\nGoogle] as google
-    [Persona\nFacebook] as fb
-}
-
-package "ForgeRock Legacy" {
-    [FR User\nID:456] as fr
-    [aliasList] as aliases
-}
-
-fr --> aliases : Contains
-aliases --> google.subject : "google-id"
-aliases --> fb.subject : "fb-id"
-ident --> primary : Core identity
-ident --> google : Social link
-ident --> fb : Social link
-@enduml
+```mermaid
+erDiagram
+    IDENTITY ||--o{ PERSONA: contains
+    IDENTITY {
+        string id PK
+        string status
+    }
+    PERSONA {
+        string id PK
+        string identity_id FK
+        string type "PRIMARY|SOCIAL"
+        string provider
+        string subject
+    }
+    FORGEROCK_USER ||--o{ ALIAS_LIST: has
 ```
 
-## 2. Critical Questions
+## Migration Phases
 
-### 🔍 Identity Resolution
-1. **How to handle users with multiple FR accounts sharing the same email?**  
-   *Proposed Solution: Merge into single HIS identity with multiple personas*
+| Phase                       | Activities                                      | Success Criteria      |
+| --------------------------- | ----------------------------------------------- | --------------------- |
+| 1: On-the-Fly Migration     | Migrate existing users during login (PDP first) |                       |
+| 2: New User Creation Direct | Direct all new users to HIS (Scotia migration)  | 100% new users in HIS |
+| 3: Background Sync          | Scheduled FR→HIS sync (Corporate/Embedded)      | <1% FR-only users     |
+| 4: HIS as SSOT              | Disable FR writes, redirect reads to HIS        | Zero FR writes        |
+| 5: FR Decommission          | Archive FR data, remove dependencies            | Cost savings realized |
 
-2. **How to detect client context for non-PDP users?**  
-   *Requires clarification:*
-   ```plantuml
-   @startuml
-   skinparam BackgroundColor #FFF
-   skinparam DefaultFontColor #000
-   
-   rectangle "Unknown Context" {
-   component "User\nwithout OTP"
-   component "No corporate\nentitlements"
-   component "No referrer\nheader"
-   
-   "User\nwithout OTP" --> "No corporate\nentitlements"
-   "No corporate\nentitlements" --> "No referrer\nheader"
-   "No referrer\nheader" --> "Default to\nPayeeweb?"
-   }
-   @enduml
-   ```
+## Rollback & Fallback Plan
 
-### 🔄 Sync Mechanism
-3. **How to handle conflicting updates during migration?**  
-   *Decision needed: HIS-first vs FR-first priority*
-
-4. **Should we maintain FR as a read replica post-migration?**  
-   *Tradeoffs:*
-   ```plantuml
-   @startuml
-   skinparam BackgroundColor #FFF
-   skinparam DefaultFontColor #000
-   
-   left to right direction
-   
-   rectangle "Pros" as p {
-   text="Faster session recovery"
-   text="Fallback mechanism"
-   }
-   
-   rectangle "Cons" as c {
-   text="Additional sync complexity"
-   text="Data drift risk"
-   }
-   
-   p -[hidden]-> c
-   note on link: Tradeoff analysis
-   @enduml
-   ```
-
-### 🔒 Security & Compliance
-5. **How to handle data residency requirements?**  
-   *Unresolved: Regional sharding vs global datastore*
-
-6. **Migration failure rollback strategy:**  
-   *Options:*
-   ```plantuml
-   @startuml
-   skinparam BackgroundColor #FFF
-   skinparam DefaultFontColor #000
-   
-   state "Migration Failed" as fail
-   state "Maintain FR account" as opt1
-   state "Create new HIS identity" as opt2
-   state "Manual intervention" as opt3
-   
-   [*] --> fail
-   fail --> opt1 : Option 1
-   fail --> opt2 : Option 2
-   fail --> opt3 : Option 3
-   @enduml
-   ```
-
-## 3. Migration Phases
-
-### Phase 1: Live Migration (Detailed)
-```plantuml
-@startuml
-skinparam BackgroundColor #FFF
-skinparam DefaultFontColor #000
-
-User -> "Auth Service": Login request
-"Auth Service" -> HIS: findIdentity(email)
-alt Identity missing
-    HIS -> "FR Adapter": getUserByEmail(email)
-    "FR Adapter" -> ForgeRock: LDAP query
-    ForgeRock --> "FR Adapter": User object
-    "FR Adapter" --> HIS: User data
-    HIS -> "Migration Service": migrateFRUser()
-    
-    group Migration Process
-        "Migration Service" -> "Identity Service": createIdentity()
-        "Identity Service" --> "Migration Service": ID
-        loop for each alias
-            "Migration Service" -> "Persona Service": createSocialPersona()
-        end
-        "Migration Service" -> "Persona Service": createPrimaryPersona()
-    end
-end
-HIS --> "Auth Service": Identity token
-"Auth Service" --> User: JWT
-@enduml
+```mermaid
+stateDiagram-v2
+    [*] --> Migrating
+    Migrating --> Success: Identity created
+    Migrating --> Failure: Error
+    Failure --> Rollback: Maintain FR account
+    Failure --> Retry: Recreate in HIS
+    Failure --> Manual: Admin intervention
 ```
 
-## 4. Open Questions (Urgent)
+* **Real-Time Fallback:** For any HIS error, FR acts as a fallback for login/authentication.
+* **Conflict Resolution:** HIS handles attribute merge conflicts during migration based on brand priority and last-update timestamps.
+* **Observability:** Dashboards for identity migration, error tracking, and FR fallback rates will be live.
 
-### ❗ High Priority
-| Question | Impact | Owner |
-|----------|--------|-------|
-| How to detect Corporate vs Embedded Banking users without entitlements? | High - affects persona structure | Product Team |
-| Should we allow HIS→FR writebacks for session attributes? | Medium - sync complexity | Architecture |
-| Retention period for FR data post-migration | Legal/Compliance | Security Team |
+## Critical Decisions
 
-### ⏳ Longer-Term
-| Question | Consideration | Timeline |
-|----------|---------------|----------|
-| Full FR decommissioning | Cost savings vs fallback need | Q2 2025 |
-| Multi-region persona support | Data residency requirements | Q3 2025 |
+### 4.1 Identity Resolution
 
+| Decision                                                       | Rationale                       | Status   |
+| -------------------------------------------------------------- | ------------------------------- | -------- |
+| Merge duplicate emails into single HIS identity                | Prevents identity fragmentation | Approved |
+| Use custom\_hasCompletedMFA + entitlements for brand detection | Accurate client context         | Proposed |
 
-## Key Improvements:
-1. **Complete visual documentation** - All critical flows now have PlantUML diagrams
-2. **Highlighted decision points** - Critical questions marked with 🔍/🔄/🔒 icons 
-3. **Ownership matrix** - Clear assignment for open questions
-4. **Risk visualization** - Tradeoff diagrams for controversial decisions
-5. **Phase 1 detail** - Expanded login migration sequence
+### 4.2 Security & Compliance
 
-## Suggested Next Steps:
-1. **Conduct workshops** for high-priority questions (❗ items)
-2. **Define detection heuristics** for client context beyond PDP
-3. **Prototype migration API** with error handling scenarios
-4. **Establish compliance review** for data residency requirements
-5. **Create test matrix** for social account merging scenarios
+| Decision                                      | Rationale                         | Status            |
+| --------------------------------------------- | --------------------------------- | ----------------- |
+| Maintain FR as read replica during transition | Enables rollback without downtime | Approved          |
+| Delete FR passwords post-migration            | Reduces attack surface            | Pending SecReview |
+
+### 4.3 PDP Integration
+
+| Decision                                  | Rationale                  | Status   |
+| ----------------------------------------- | -------------------------- | -------- |
+| HIS creates PUPEE profiles with Sentry ID | Unified profile management | Approved |
+| Authentication service in PCI account     | Security isolation         | Approved |
+
+## Open Questions
+
+### 5.1 High Priority
+
+| Question                                                        | Impact                   | Owner    |
+| --------------------------------------------------------------- | ------------------------ | -------- |
+| How to detect Corporate vs Embedded users without entitlements? | High (Persona structure) | Product  |
+| Password migration strategy from FR to auth service             | Medium (User experience) | Security |
+| Legal requirements for FR data retention                        | High (Compliance)        | Legal    |
+
+### 5.2 Journey Implementation
+
+* Should we maintain separate journeys per client or unify?
+* Social login UI requirements for PDP
+* Entitlement synchronization between HIS and client systems
+
+## Follow-Up ADRs
+
+### ADR-001: HIS as Source of Truth
+
+* **Decision**: All identity writes route to HIS
+* **Consequences**: Dual-write during transition
+
+### ADR-002: Persona-Based Identity Model
+
+* **Decision**: Model social identities as separate personas
+* **Example:**
+
+```mermaid
+flowchart LR
+    Identity --> Primary
+    Identity --> Google
+    Identity --> Facebook
+```
+
+### ADR-003: On-the-Fly Migration
+
+* **Decision**: Migrate during first new-journey login
+* **Error Handling**: Maintain FR account on failure
+
+## Key Metrics
+
+* **Coverage**: 100% new users in HIS by Phase 2
+* **Completeness**: 95% legacy users migrated by Phase 3
+* **Consistency**: <0.1% data drift during sync
+* **Performance**: <500ms auth latency
+
+## Appendix
+
+* HIS API Specifications
+* FR Data Dictionary
+* Migration Test Cases
