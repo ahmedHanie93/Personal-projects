@@ -219,38 +219,6 @@ end note
 
 #### 2.7 Customization Points
 
-```plantuml
-@startuml
-left to right direction
-
-component "Authentication Service" as auth
-database "Persona Configuration" as config
-
-auth --> config : Read persona settings
-config --> auth : Apply configurations
-
-package "Runtime Customization" {
-  rectangle "Social Provider Toggle" as social
-  rectangle "Branding Elements" as branding
-  rectangle "Consent Screens" as consent
-  rectangle "Entitlement Rules" as entitlements
-}
-
-config --> social
-config --> branding
-config --> consent
-config --> entitlements
-
-note right of config
-  <b>Configuration Elements:</b>
-  • Social provider enablement
-  • Consent screen content
-  • Branding elements
-  • Entitlement rules
-end note
-@enduml
-```
-
 - **Missing UI screens for mandatory social user data**
 
 ## 3. Conflict Resolution
@@ -340,8 +308,6 @@ skinparam noteFontSize 11
 skinparam noteBackgroundColor #FFFDE7
 skinparam noteBorderColor #FFECB3
 
-left to right direction
-
 package "Profile Creation" {
   actor "PDP System" as pdp
   component "HIS" as his
@@ -349,14 +315,14 @@ package "Profile Creation" {
   
 }
 
-note right of his
+note top of his
   <b>Authoritative Profile Creation</b>
   • HIS becomes single source of truth
   • Sentry ID replaces email as primary key
   • All profiles standardized
 end note
 
-note right of pupee
+note top of pupee
   <b>PUPEE Changes</b>
   • Sentry ID becomes primary key
   • Email becomes secondary identifier
@@ -374,54 +340,11 @@ end note
 
 ### 4.2 PCI Migration
 
-PDP should be agnostic to that, we should avoid having to do a migration twice from FR-SaaS to authentication service on
-Non-PCI and then from Non-PCI to PCI.
-
-```plantuml
-@startuml
-!define LIGHTBLUE #E6F2FF
-!define LIGHTPURPLE #EDE7F6
-
-skinparam defaultFontSize 12
-skinparam rectangle {
-  BackgroundColor<<PCI>> #FFEBEE
-  BackgroundColor<<NonPCI>> #E8F5E9
-}
-
-rectangle "PCI Environment" <<PCI>> {
-  component "Authentication Service" as auth
-  database "PCI Database" as db
-}
-
-rectangle "Non-PCI Environment" <<NonPCI>> {
-  actor "PDP System" as pdp
-  component "HIS" as his
-}
-
-auth --> db : Passwords Secure storage
-
-note top of auth
-  <b>Zero PDP Impact Guarantee</b>
-  • Identical API contracts
-  • Same endpoint URLs
-  • Unchanged request/response formats
-end note
-
-note right of pdp
-  <b>No Changes Required</b>
-  • Agnostic to infrastructure
-  • Unaware of PCI migration
-  • Seamless transition
-end note
-
-note bottom of db
-  <b>Security Benefits</b>
-  • PCI-compliant storage
-  • Enhanced encryption
-  • Regular audits
-end note
-@enduml
-```
+- We need to move Authentication service to PCI
+- PDP should be agnostic to that
+- We should avoid having to do a migration on:
+    - Non-PCI
+    - then from Non-PCI to PCI.
 
 [//]: # (### Workflow)
 
@@ -459,13 +382,13 @@ end note
 
 [//]: # (```)
 
-| Phase                  | Activities                             | Brand Specific |
-|------------------------|----------------------------------------|----------------|
-| **1: Live Migration**  | Migrate users during login (PDP first) | Yes            |
-| **2: New Users**       | Direct new users to HIS                | Yes            |
-| **3: Background Sync** | Scheduled FR→HIS sync                  | Yes            |
-| **4: HIS as SSOT**     | Disable FR writes                      | No             |
-| **5: Decommission**    | Archive FR data                        | No             |
+| Phase                  | Activities                                              | Brand Specific |
+|------------------------|---------------------------------------------------------|----------------|
+| **1: Live Migration**  | Migrate users on the fly during login (PDP first)       | Yes            |
+| **2: New Users**       | Direct new users to HIS                                 | Yes            |
+| **3: Background Sync** | Run migration FR→HIS sync                               | Yes            |
+| **4: HIS as SSOT**     | All write/read operations move to HIS                   | No             |
+| **5: Decommission**    | Archive FR data agter all brand users has been migrated | No             |
 
 ### 5.2 Key Workflows
 
@@ -473,17 +396,31 @@ end note
 
 - On-demand reset during login
 - New passwords stored in authentication service
-  ```mermaid
-  journey
-   title Password Transition
-   section User
-   Login: 5
-   Reset Prompt: 5
-   Set Password: 5
-   section System
-   Store in Auth Service: 5
-   Delete from FR: 5
-  ```
+- FR passwords: Delete immediately post-migration.
+
+[//]: # ()
+
+[//]: # (  ```mermaid)
+
+[//]: # (  journey)
+
+[//]: # (   title Password Transition)
+
+[//]: # (   section User)
+
+[//]: # (   Login: 5)
+
+[//]: # (   Reset Prompt: 5)
+
+[//]: # (   Set Password: 5)
+
+[//]: # (   section System)
+
+[//]: # (   Store in Auth Service: 5)
+
+[//]: # (   Delete from FR: 5)
+
+[//]: # (  ```)
 
 #### Failure Handling:
 
@@ -494,15 +431,13 @@ flowchart TB
     Failure --> Step3[Manual Intervention]
 ```
 
-- **FR passwords: Delete immediately post-migration**
-
 ## 6. Decision FAQ
 
-| Question                                                                  | Decision                                                      | Rationale                                                                                                      | Implementation                                                                 |
-|---------------------------------------------------------------------------|---------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------|
-| **How to handle users with multiple FR accounts sharing the same email?** | Merge into single HIS identity with multiple personas         | Prevents identity fragmentation<br>Preserves all entitlements<br>Maintains access across all original accounts | Automated merge during migration<br>Admin notification for manual verification |
-| **Should we allow HIS → FR writebacks for session attributes?**           | No writebacks                                                 | Enables safe rollback<br>Prevents synchronization conflicts<br>Maintains FR as read-only during transition     | Block all write operations to FR<br>Audit any attempted writebacks             |
-| **Do we need to delete FR data post-migration?**                          | Delete passwords immediately<br>Purge aliasList after 30 days | Security compliance (passwords in SaaS)<br>Reduce attack surface<br>Privacy regulations (PII minimization)     | Automated scrubbing jobs<br>Verification audits<br>Compliance documentation    |
+| Question                                                                  | Decision                                                 | Rationale                                                                                                      | Implementation                                                                 |
+|---------------------------------------------------------------------------|----------------------------------------------------------|----------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------|
+| **How to handle users with multiple FR accounts sharing the same email?** | Merge into single HIS identity with multiple personas    | Prevents identity fragmentation<br>Preserves all entitlements<br>Maintains access across all original accounts | Automated merge during migration<br>Admin notification for manual verification |
+| **Should we allow HIS → FR writebacks in case of a conflict?**            | No writebacks                                            | Enables safe rollback<br>Prevents synchronization conflicts                                                    | Maintains FR as read-only during transition except for session details.        |
+| **Do we need to delete FR data post-migration?**                          | Delete passwords immediately.<br>Might delete aliasList. | Protect our users passwords                                                                                    | Delete job                                                                     |
 
 ## 7. Follow-Up ADRs
 
