@@ -4,16 +4,16 @@
 
 ### Goals
 
-- Establish HIS as single source of truth for identity data
+- Establish SIH as single source of truth for identity data
 - Implement persona-based identity modeling
-- Enable seamless migration from ForgeRock (FR)
+- Enable seamless migration RFom ForgeRock (RF)
 - Preserve identity linkages across brands
 - Ensure zero downtime and data consistency
 - Transition password storage to authentication service
 
 ### Problem Statement
 
-FR limitations:
+RF limitations:
 
 - No persona-based identity modeling
 - SaaS model limits customization
@@ -28,22 +28,22 @@ FR limitations:
 ```mermaid
 sequenceDiagram
     actor User
-    participant FR as ForgeRock
-    participant HIS
-    participant DB as HIS Database
-    User ->> FR: Login Request
-    activate FR
-    FR ->> HIS: Authenticate
-    activate HIS
+    participant RF as ForgeRock
+    participant SIH
+    participant DB as SIH Database
+    User ->> RF: Login Request
+    activate RF
+    RF ->> SIH: Authenticate
+    activate SIH
     alt New Identity
-        HIS ->> DB: Create Identity + Personas
+        SIH ->> DB: Create Identity + Personas
     else Existing Identity
-        HIS ->> DB: Update Persona
+        SIH ->> DB: Update Persona
     end
-    HIS -->> FR: Auth Result
-    deactivate HIS
-    FR -->> User: Access Token
-    deactivate FR
+    SIH -->> RF: Auth Result
+    deactivate SIH
+    RF -->> User: Access Token
+    deactivate RF
 ```
 
 ### 2.2 Brand Detection & Identity Resolution
@@ -55,13 +55,13 @@ sequenceDiagram
 ```mermaid
 flowchart TD
     Start[Login] --> OTP{OTP?}
-    OTP -->|Yes| PDP[PDP]
+    OTP -->|Yes| DPD[DPD]
     OTP -->|No| Entitlements{Corporate?}
     Entitlements -->|Yes| Corporate
     Entitlements -->|No| Referrer{Embedded?}
     Referrer -->|Yes| Embedded
     Referrer -->|No| Payeeweb
-    style PDP fill: #E3F2FD, stroke: #0D47A1
+    style DPD fill: #E3F2FD, stroke: #0D47A1
     style Corporate fill: #E8F5E9, stroke: #2E7D32
     style Embedded fill: #FFF8E1, stroke: #F57F17
     style Payeeweb fill: #F3E5F5, stroke: #6A1B9A
@@ -74,17 +74,17 @@ flowchart TD
 
 ```mermaid
 sequenceDiagram
-    User ->> FR: Login
-    FR ->> HIS: Identity Check
+    User ->> RF: Login
+    RF ->> SIH: Identity Check
     alt Not Found
-        HIS ->> FR: Request User Data
-        FR -->> HIS: User + aliasList
+        SIH ->> RF: Request User Data
+        RF -->> SIH: User + aliasList
         loop For each alias
-            HIS ->> HIS: createSocialPersona()
+            SIH ->> SIH: createSocialPersona()
         end
-        HIS ->> HIS: createIdentity()
+        SIH ->> SIH: createIdentity()
     end
-    HIS -->> FR: Identity Token
+    SIH -->> RF: Identity Token
 ```
 
 ### 2.4 Social Account Linking
@@ -121,16 +121,16 @@ rectangle "Customer Login Journeys" as customer <<customer>> CUSTOMER_COLOR
 
 social -[hidden]-> customer : Future unification
 
-rectangle "Scotia" as scotia
-rectangle "PDP" as pdp
+rectangle "canada" as canada
+rectangle "DPD" as DPD
 rectangle "SSO/Prospect" as sso
 
 rectangle "Payeeweb" as payeeweb
 rectangle "Embedded Banking" as embedded
 rectangle "Corporate Challenge" as corporate
 
-social --> scotia
-social --> pdp
+social --> canada
+social --> DPD
 social --> sso
 customer --> payeeweb
 customer --> embedded
@@ -138,7 +138,7 @@ customer --> corporate
 
 note top of social
   <b>Social Login Journeys</b>
-  • Scotia, PDP, SSO/Prospect
+  • canada, DPD, SSO/Prospect
   • Supports social providers
   • Unified under default_Federation
 end note
@@ -153,7 +153,7 @@ end note
 ```
 
 ### 2.6 Journey Unification Timeline
-
+- We start with DPD because of minimal risk & least number of users RFom all our customers
 ```plantuml
 @startuml
 left to right direction
@@ -176,32 +176,32 @@ phase3 --> m3
 note top of current
   <b>Current State (2023 Q4)</b>
   • Separate journeys
-  • Social: Scotia, PDP, SSO
+  • Social: canada, DPD, SSO
   • Customer: Payeeweb, Embedded, Corporate
 end note
 
 note top of phase1
-  <b>Phase 1 (2024 Q1)</b>
-  • Migrate Scotia
-  • Migrate PDP
+  <b>Phase 1 (2025 Q2)</b>
+  • Migrate canada
+  • Migrate DPD
   • Migrate SSO
 end note
 
 note top of phase2
-  <b>Phase 2 (2024 Q2-Q3)</b>
+  <b>Phase 2 (2025 Q2-Q3)</b>
   • Payeeweb migration
   • Embedded Banking
   • Corporate Challenge
 end note
 
 note top of phase3
-  <b>Phase 3 (2024 Q4)</b>
+  <b>Phase 3 (2024 Q5)</b>
   • Single configurable flow
   • Persona-based customization
 end note
 
 note bottom of m1
-  <b>Milestone: PDP Migrated</b>
+  <b>Milestone: DPD Migrated</b>
   2024-03-01
 end note
 
@@ -225,8 +225,8 @@ end note
 
 ### Resolution Principles
 
-1. **HIS is SSOT**: Wins for core identity attributes
-2. **FR Priority**: Wins for session-related attributes
+1. **SIH is SSOT**: Wins for core identity attributes
+2. **RF Priority**: Wins for session-related attributes
 3. **Version Control**: Timestamp-based conflict detection
 4. **Attribute-specific Rules**: Different resolution per parameter type
 
@@ -254,7 +254,7 @@ state "Core Identity\n(email, phone, status)" as core <<Core>>
 state "Session Data\n(lastLogin, loginCount)" as session <<Session>>
 state "Social Links\n(aliasList, connections)" as social <<Social>>
 state "Apply Resolution" as resolve
-state "Commit to HIS" as commit
+state "Commit to SIH" as commit
 
 [*] --> start
 start --> identify
@@ -263,20 +263,20 @@ identify --> core : Core
 identify --> session : Session
 identify --> social : Social
 
-core --> resolve : HIS wins
-session --> resolve : FR wins
+core --> resolve : SIH wins
+session --> resolve : RF wins
 social --> resolve : Merge unique
 
 resolve --> commit
 commit --> [*]
 
 note right of core
-  <b>Resolution: HIS value</b>
+  <b>Resolution: SIH value</b>
   <i>Reason: SSOT principle</i>
 end note
 
 note right of session
-  <b>Resolution: FR value</b>
+  <b>Resolution: RF value</b>
   <i>Reason: Session integrity</i>
 end note
 
@@ -289,12 +289,12 @@ end note
 note bottom of resolve
   <b>Resolution Applied</b>
   • Audit log created
-  • HIS updated as SSOT
+  • SIH updated as SSOT
 end note
 @enduml
 ```
 
-## 4. PDP Integration
+## 4. DPD Integration
 
 ### 4.1 Profile Creation
 
@@ -309,28 +309,28 @@ skinparam noteBackgroundColor #FFFDE7
 skinparam noteBorderColor #FFECB3
 
 package "Profile Creation" {
-  actor "PDP System" as pdp
-  component "HIS" as his
-  database "PUPEE" as pupee
+  actor "DPD System" as DPD
+  component "SIH" as SIH
+  database "EEPUM" as EEPUM
   
 }
 
-note top of his
+note top of SIH
   <b>Authoritative Profile Creation</b>
-  • HIS becomes single source of truth
+  • SIH becomes single source of truth
   • Sentry ID replaces email as primary key
   • All profiles standardized
 end note
 
-note top of pupee
-  <b>PUPEE Changes</b>
+note top of EEPUM
+  <b>EEPUM Changes</b>
   • Sentry ID becomes primary key
   • Email becomes secondary identifier
   • Backward compatibility maintained
 end note
 
-note top of pdp
-  <b>PDP Migration</b>
+note top of DPD
+  <b>DPD Migration</b>
   1. Update to use Sentry ID
   2. Retire email-based operations
   3. New API endpoints
@@ -341,20 +341,20 @@ end note
 ### 4.2 PCI Migration
 
 - We need to move Authentication service to PCI
-- PDP should be agnostic to that
+- DPD should be agnostic to that
 - We should avoid having to do a migration on:
     - Non-PCI
-    - then from Non-PCI to PCI.
+    - then RFom Non-PCI to PCI.
 
 [//]: # (### Workflow)
 
 [//]: # ()
 
-[//]: # (1. Transition period: HIS and PDP both create profiles)
+[//]: # (1. Transition period: SIH and DPD both create profiles)
 
-[//]: # (2. HIS becomes exclusive creator)
+[//]: # (2. SIH becomes exclusive creator)
 
-[//]: # (3. Final state: PDP uses HIS-created profiles exclusively)
+[//]: # (3. Final state: DPD uses SIH-created profiles exclusively)
 
 ## 5. Migration Strategy
 
@@ -384,11 +384,11 @@ end note
 
 | Phase                  | Activities                                              | Brand Specific |
 |------------------------|---------------------------------------------------------|----------------|
-| **1: Live Migration**  | Migrate users on the fly during login (PDP first)       | Yes            |
-| **2: New Users**       | Direct new users to HIS                                 | Yes            |
-| **3: Background Sync** | Run migration FR→HIS sync                               | Yes            |
-| **4: HIS as SSOT**     | All write/read operations move to HIS                   | No             |
-| **5: Decommission**    | Archive FR data agter all brand users has been migrated | No             |
+| **1: Live Migration**  | Migrate users on the fly during login (DPD first)       | Yes            |
+| **2: New Users**       | Direct new users to SIH                                 | Yes            |
+| **3: Background Sync** | Run migration RF→SIH sync                               | Yes            |
+| **4: SIH as SSOT**     | All write/read operations move to SIH                   | No             |
+| **5: Decommission**    | Archive RF data agter all brand users has been migrated | No             |
 
 ### 5.2 Key Workflows
 
@@ -396,7 +396,7 @@ end note
 
 - On-demand reset during login
 - New passwords stored in authentication service
-- FR passwords: Delete immediately post-migration.
+- RF passwords: Delete immediately post-migration.
 
 [//]: # ()
 
@@ -418,7 +418,7 @@ end note
 
 [//]: # (   Store in Auth Service: 5)
 
-[//]: # (   Delete from FR: 5)
+[//]: # (   Delete RFom RF: 5)
 
 [//]: # (  ```)
 
@@ -426,8 +426,8 @@ end note
 
 ```mermaid
 flowchart TB
-    Failure --> Step1[Maintain FR Access]
-    Failure --> Step2[Recreate from Backup]
+    Failure --> Step1[Maintain RF Access]
+    Failure --> Step2[Recreate RFom Backup]
     Failure --> Step3[Manual Intervention]
 ```
 
@@ -435,16 +435,16 @@ flowchart TB
 
 | Question                                                                  | Decision                                                 | Rationale                                                                                                      | Implementation                                                                 |
 |---------------------------------------------------------------------------|----------------------------------------------------------|----------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------|
-| **How to handle users with multiple FR accounts sharing the same email?** | Merge into single HIS identity with multiple personas    | Prevents identity fragmentation<br>Preserves all entitlements<br>Maintains access across all original accounts | Automated merge during migration<br>Admin notification for manual verification |
-| **Should we allow HIS → FR writebacks in case of a conflict?**            | No writebacks                                            | Enables safe rollback<br>Prevents synchronization conflicts                                                    | Maintains FR as read-only during transition except for session details.        |
-| **Do we need to delete FR data post-migration?**                          | Delete passwords immediately.<br>Might delete aliasList. | Protect our users passwords                                                                                    | Delete job                                                                     |
+| **How to handle users with multiple RF accounts sharing the same email?** | Merge into single SIH identity with multiple personas    | Prevents identity RFagmentation<br>Preserves all entitlements<br>Maintains access across all original accounts | Automated merge during migration<br>Admin notification for manual verification |
+| **Should we allow SIH → RF writebacks in case of a conflict?**            | No writebacks                                            | Enables safe rollback<br>Prevents synchronization conflicts                                                    | Maintains RF as read-only during transition except for session details.        |
+| **Do we need to delete RF data post-migration?**                          | Delete passwords immediately.<br>Might delete aliasList. | Protect our users passwords                                                                                    | Delete job                                                                     |
 
 ## 7. Follow-Up ADRs
 
-### ADR-001: HIS as Source of Truth
+### ADR-001: SIH as Source of Truth
 
-- All identity writes route to HIS
-- FR becomes read-only during transition
+- All identity writes route to SIH
+- RF becomes read-only during transition
 
 ### ADR-002: Persona-Based Identity
 
