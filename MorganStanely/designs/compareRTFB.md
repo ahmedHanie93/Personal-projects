@@ -131,6 +131,42 @@ Erasure does not apply when data processing is:
 
 ---
 
+## 6. Frequently Asked Questions (FAQ)
+
+### Q1: Why not enforce full deletion of user identities in Sentry?
+
+**A:** Full deletion would impair our ability to comply with legal and audit obligations. Soft deletion allows us to revoke user access while retaining minimal metadata (e.g. user ID, timestamps) required for audit trails. This approach also aligns with how Azure AD and Google implement deletion retention.
+
+### Q2: How do we balance GDPR erasure with Anti-Money Laundering (AML) requirements?
+
+**A:** Our model applies classification-based handling: PII not subject to compliance obligations is removed or redacted. Data required for AML, tax, or legal obligations is retained in pseudonymized form, in line with GDPR Article 17 exemptions.
+
+### Q3: How will downstream applications know what data to remove?
+
+**A:** Sentry emits RTBF events to registered systems with a contract defining the user identity, required actions (delete/redact), and compliance traceability ID. Consumers are onboarded with integration contracts and a common RTBF schema.
+
+### Q4: Do audit logs containing PII get deleted?
+
+**A:** No. Deleting logs undermines forensic accountability. Instead, we redact PII fields (e.g. names/emails) to preserve context without exposing identity. This follows a standard practice used by Google and Stripe.
+
+### Q5: Isn’t pseudonymization risky since it’s reversible?
+
+**A:** Pseudonymization is only used when necessary (e.g. audit and fraud systems). Re-identification requires controlled access to the mapping keys. We encrypt these mappings and limit access to privileged roles.
+
+### Q6: Will this introduce latency to the user deletion flow?
+
+**A:** No. Soft deletion in Sentry is immediate. RTBF propagation is asynchronous and tracked via job status logs. This ensures fast response with eventual downstream consistency.
+
+### Q7: What prevents a user from being re-provisioned after deletion?
+
+**A:** A "tombstone" record is retained to prevent re-activation. If the same identity attempts to re-register, the system flags it for review or blocks it outright depending on policy.
+
+### Q8: Is this model scalable for the 100+ systems integrated with Sentry?
+
+**A:** Yes. Sentry acts as a coordinator, not a controller. We provide contracts, event formats, and audit interfaces, while each consumer implements deletion locally. Priority is given to systems with regulatory risk.
+
+---
+
 ## References
 
 * [Auth0 GDPR Guide](https://auth0.com/docs/compliance/gdpr)
