@@ -1,16 +1,16 @@
-# RFC: Right to Be Forgotten (RTBF) and User Removal in Sentry
+# RFC: Right to Be Forgotten (RTBF) and User Removal in PAID
 
 ## 1. Purpose
 
 This document outlines the architecture, design principles, and phased roadmap for implementing Right to Be Forgotten (
-RTBF) capabilities in the Sentry identity platform. It aims to meet GDPR, CCPA, and JPMorgan internal compliance needs
+RTBF) capabilities in the PAID identity platform. It aims to meet GDPR, CCPA, and JPMorgan internal compliance needs
 while ensuring downstream systems receive appropriate revocation signals.
 
 ---
 
 ## 2. Background
 
-Sentry is an external identity provider platform integrating multiple federated and M2M systems. Currently, there is no
+PAID is an external identity provider platform integrating multiple federated and M2M systems. Currently, there is no
 formal user deletion or pseudonymization mechanism. This RFC proposes a phased, scalable model to safely remove or
 anonymize user data while preserving audit trails and regulatory requirements.
 
@@ -19,7 +19,7 @@ anonymize user data while preserving audit trails and regulatory requirements.
 ## 3. Goals
 
 * Enable pseudonymization and soft deletion of identity data
-* Ensure entitlements are revoked in PUPEE/DCB
+* Ensure entitlements are revoked in ENTITLEMENT/ENTITLEMENT
 * Support legal and compliance-driven exemption checks
 * Track and log each RTBF action for audit
 * Lay the groundwork for downstream integration
@@ -31,12 +31,12 @@ anonymize user data while preserving audit trails and regulatory requirements.
 | Component        | Description                                            |
 |------------------|--------------------------------------------------------|
 | Users            | Federated (Scotia), outbound SAML, M2M, local users    |
-| Entitlements     | PUPEE, DCB (2 systems currently integrated)            |
+| Entitlements     | ENTITLEMENT, ENTITLEMENT (2 systems currently integrated)            |
 | Deletion Process | None currently defined                                 |
 | Audit Logs       | Retained, not pseudonymized                            |
 | Compliance       | No automated legal hold checks or GDPR execution paths |
 
-> **Note:** “No legal hold checks or GDPR pathways” means that Sentry currently lacks built-in workflows to check if a
+> **Note:** “No legal hold checks or GDPR pathways” means that PAID currently lacks built-in workflows to check if a
 > user is under litigation/legal hold or to execute RTBF requests in a structured, compliant way.
 
 ---
@@ -66,7 +66,7 @@ flowchart TD
     B -->|Proceed| D[RtbfHandler]
     D --> E[Pseudonymizer HMAC SHA256]
     D --> F[TokenRevoker]
-    D --> G[EntitlementClient PUPEE/DCB]
+    D --> G[EntitlementClient ENTITLEMENT/ENTITLEMENT]
     D --> H[Notifier Kafka/HTTP]
     E & F & G & H --> I[ForgetReceipt Log S3/DB]
 ```
@@ -81,7 +81,7 @@ sequenceDiagram
     PolicyEvaluator -->> RtbfHandler: Proceed / Exempt
     RtbfHandler ->> Pseudonymizer: Anonymize ID, Email
     RtbfHandler ->> TokenRevoker: Expire sessions, tokens
-    RtbfHandler ->> EntitlementClient: Remove PUPEE/DCB entries
+    RtbfHandler ->> EntitlementClient: Remove ENTITLEMENT/ENTITLEMENT entries
     RtbfHandler ->> Notifier: Send downstream events
     RtbfHandler ->> AuditService: Store ForgetReceipt
 ```
@@ -134,12 +134,12 @@ public class ForgetReceipt {
   "user_id": "usr_91a83",
   "actions": [
     {
-      "system": "PUPEE",
+      "system": "ENTITLEMENT",
       "action": "REVOKE",
       "proof": "jws1..."
     },
     {
-      "system": "SentryDB",
+      "system": "PAIDDB",
       "action": "ANONYMIZE",
       "proof": "jws2..."
     }
@@ -184,7 +184,7 @@ public class ForgetReceipt {
 
 1. **Shadow Tables:** Should we store anonymized IDs alongside originals in a dedicated, secured table to allow joining
    for reporting?
-2. **PUPEE/DCB SLA:** What turnaround time is reasonable and enforceable for entitlement removal?
+2. **ENTITLEMENT/ENTITLEMENT SLA:** What turnaround time is reasonable and enforceable for entitlement removal?
 3. **Federated RTBF:** Do we need legal contracts or APIs with IdPs like Scotia to support RTBF reliably?
 
 > These are decisions that need further alignment with Legal, SRE, and Integration partners before final implementation.
@@ -199,7 +199,7 @@ public class ForgetReceipt {
    *✅ Pros*: Enables audit joins without exposing PII.  
    *⚠️ Cons*: Adds ETL complexity. **Recommendation: Implement in Phase 2**.
 
-2. **PUPEE/DCB SLA**: **15-minute revocation SLA** (aligns with JPMC access revocation standards).
+2. **ENTITLEMENT/ENTITLEMENT SLA**: **15-minute revocation SLA** (aligns with JPMC access revocation standards).
 
 3. **Federated RTBF**: Require IdPs (e.g., Scotia) to implement `Forgettable` interface. Phase 1 falls back to local
    pseudonymization.
@@ -218,7 +218,7 @@ public class ForgetReceipt {
 
 ### Q2: How does the RFC handle users under legal hold or AML review?
 
-**A:** The `PolicyEvaluator` checks exemption sources (e.g. DCB or Legal DB). Exempt users trigger a logged exemption
+**A:** The `PolicyEvaluator` checks exemption sources (e.g. ENTITLEMENT or Legal DB). Exempt users trigger a logged exemption
 and are excluded from deletion.
 
 ### Q3: Why use pseudonymization instead of deletion?
@@ -226,7 +226,7 @@ and are excluded from deletion.
 **A:** Pseudonymization retains the record for audit and fraud purposes while masking PII, which aligns with financial
 regulatory requirements.
 
-### Q4: What happens if PUPEE or a downstream system fails?
+### Q4: What happens if ENTITLEMENT or a downstream system fails?
 
 **A:** The orchestrator retries the request. After 3 failures, it escalates to SRE. The failure is logged in the
 ForgetReceipt.
@@ -270,7 +270,7 @@ Backup Metadata:
 
 | System   | Endpoint                | SLA | Data Domains |  
 |----------|-------------------------|-----|--------------|  
-| PUPEE    | `https://pup.ee/forget` | 15m | Entitlements |  
+| ENTITLEMENT    | `https://pup.ee/forget` | 15m | Entitlements |  
 | Payments | `https://pay.jpmc/rtbf` | 1h  | Transactions |
 
 > Enables auto-discovery of systems to notify during RTBF.
@@ -279,10 +279,10 @@ Backup Metadata:
 
 ```mermaid  
 sequenceDiagram
-    RtbfHandler ->> PUPEE: ForgetUser()
-    PUPEE -->> RtbfHandler: Timeout
-    RtbfHandler ->> PUPEE: Retry (x2)
-    PUPEE -->> RtbfHandler: Fail
+    RtbfHandler ->> ENTITLEMENT: ForgetUser()
+    ENTITLEMENT -->> RtbfHandler: Timeout
+    RtbfHandler ->> ENTITLEMENT: Retry (x2)
+    ENTITLEMENT -->> RtbfHandler: Fail
     RtbfHandler ->> SRE: PagerDuty Alert
     RtbfHandler ->> Audit: Log Orphaned Receipt  
 ```  

@@ -3,7 +3,7 @@
 ## Objective
 
 Compare how leading IDPs and platforms like Stripe interpret these principles and helps define a compliant, auditable
-RTBF process for Sentry at JPMorgan. how major IDPs and platforms (like Stripe) interpret and implement these
+RTBF process for PAID at JPMorgan. how major IDPs and platforms (like Stripe) interpret and implement these
 principles.
 
 ### Why RTBF Matters
@@ -112,7 +112,7 @@ Erasure does not apply when data processing is:
 
 ---
 
-## 4. Applying These Lessons to Sentry (JPMorgan Use Case)
+## 4. Applying These Lessons to PAID (JPMorgan Use Case)
 
 ### Definitions
 
@@ -130,7 +130,7 @@ Erasure does not apply when data processing is:
 
 ### 4.2 Recommended RTBF Architecture
 
-1. **Soft delete user** in Sentry (mark as inactive, revoke access).
+1. **Soft delete user** in PAID (mark as inactive, revoke access).
 2. **Notify downstream systems** to remove or anonymize user data.
 3. **Track downstream responses** and document compliance reasons if data is retained.
 4. **Redact user PII in audit logs** — rather than deleting audit records, redact or replace PII fields to retain forensic and compliance trail without exposing sensitive data.
@@ -155,13 +155,13 @@ Erasure does not apply when data processing is:
 * RTBF is more than just deletion: it includes soft delete, anonymization, token revocation, and documentation.
 * Most IDPs rely on client systems to handle PII deletion or masking.
 * Stripe offers a mature pseudonymization model under legal constraints.
-* For Sentry, the best model includes soft deletion + federated notification + compliance tracking.
+* For PAID, the best model includes soft deletion + federated notification + compliance tracking.
 
 ---
 
 ## 6. Frequently Asked Questions (FAQ)
 
-### Q1: Why not enforce full deletion of user identities in Sentry?
+### Q1: Why not enforce full deletion of user identities in PAID?
 
 **A:** Full deletion would impair our ability to comply with legal and audit obligations. Soft deletion allows us to revoke user access while retaining minimal metadata (e.g. user ID, timestamps) required for audit trails. This approach also aligns with how Azure AD and Google implement deletion retention.
 
@@ -171,7 +171,7 @@ Erasure does not apply when data processing is:
 
 ### Q3: How will downstream applications know what data to remove?
 
-**A:** Sentry emits RTBF events to registered systems with a contract defining the user identity, required actions (delete/redact), and compliance traceability ID. Consumers are onboarded with integration contracts and a common RTBF schema.
+**A:** PAID emits RTBF events to registered systems with a contract defining the user identity, required actions (delete/redact), and compliance traceability ID. Consumers are onboarded with integration contracts and a common RTBF schema.
 
 ### Q4: Do audit logs containing PII get deleted?
 
@@ -186,17 +186,13 @@ Erasure does not apply when data processing is:
 **A:** Auth0 retains logs separately from live identity records. These logs capture static values (e.g. email, user ID) at the time of the event and are not dynamically linked to the current user object. GDPR compliance is addressed through **purpose limitation** and **data minimization** (Articles 5(1)(b) and 5(1)(c)), ensuring logs are accessed only for specific, lawful uses and do not contain more data than necessary.
 
 The GDPR permits retaining log data if access is restricted, used for legitimate purposes (e.g. security or compliance), and cannot easily re-identify users. Anonymization or pseudonymization is encouraged, but not strictly required. Auth0 enables compliant use by keeping logs independent of active user identity and recommending masking/redaction during log access.
-### Q7: Will this introduce latency to the user deletion flow?
+### Q7: Will this introduce latency to the user deletion flow? 
 
-**A:** No. Soft deletion in Sentry is immediate. RTBF propagation is asynchronous and tracked via job status logs. This ensures fast response with eventual downstream consistency.
+**A:** No. Soft deletion in PAID is immediate. RTBF propagation is asynchronous and tracked via job status logs. This ensures fast response with eventual downstream consistency.
 
-### Q8: What prevents a user from being re-provisioned after deletion?
+### Q8: Is this model scalable for the 100+ systems integrated with PAID?
 
-**A:** A "tombstone" record is retained to prevent re-activation. If the same identity attempts to re-register, the system flags it for review or blocks it outright depending on policy.
-
-### Q9: Is this model scalable for the 100+ systems integrated with Sentry?
-
-**A:** Yes. Sentry acts as a coordinator, not a controller. We provide contracts, event formats, and audit interfaces, while each consumer implements deletion locally. Priority is given to systems with regulatory risk.
+**A:** Yes. PAID acts as a coordinator, not a controller. We provide contracts, event formats, and audit interfaces, while each consumer implements deletion locally. Priority is given to systems with regulatory risk.
 
 ---
 
