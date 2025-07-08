@@ -2,19 +2,37 @@
 
 ## Objective
 
-To compare how major Identity Providers (IDPs) and Stripe implement the Right to Be Forgotten (RTBF), and how lessons from their approaches can guide the implementation in Sentry — a federated identity front door used in JPMorgan. This version removes any mention of non-standard concepts such as "forget receipts" and references to machine learning.
+Compare how leading IDPs and platforms like Stripe interpret these principles and helps define a compliant, auditable
+RTBF process for Sentry at JPMorgan. how major IDPs and platforms (like Stripe) interpret and implement these
+principles.
+
+### Why RTBF Matters
+
+RTBF, under GDPR Article 17, allows users to request deletion of their personal data. While often interpreted as
+requiring full deletion, GDPR does not mandate removal of all data—particularly audit or log data necessary for
+legitimate business purposes like fraud detection or legal compliance.
+
+GDPR instead emphasizes:
+
+* **Purpose Limitation** *(Art. 5(1)(b))*: Data must only be used for its original, lawful purpose.
+* **Data Minimization** *(Art. 5(1)(c))*: Only necessary data should be kept.
+* **Storage Limitation** *(Art. 5(1)(e))*: Data should not be retained longer than needed.
+
+> Anonymization or pseudonymization of logs is encouraged where possible but not strictly required unless
+> re-identification risk exists.
+
 
 ---
 
 ## 1. Summary Table: RTBF Feature Comparison
 
-| Provider     | Soft Delete           | Full Deletion | Anonymization   | Audit Logs Retained | Reinstatement              | Compliance Exemptions Handling    |
-| ------------ | --------------------- | ------------- | --------------- | ------------------- | -------------------------- | --------------------------------- |
-| **Auth0**    | No                    | Yes           | No              | Yes (decoupled)     | Re-register only           | Delegated to client systems       |
-| **Okta**     | Yes                   | Yes           | Manual          | Yes                 | Re-activate or re-register | Requires downstream support       |
-| **Azure AD** | Yes (30d)             | Yes           | Partial         | Yes (up to 1 year)  | Restore within window      | Must be implemented at app layer  |
-| **Google**   | Yes                   | Yes (20d+)    | Yes (in logs)   | Yes (de-identified) | Re-register only           | Downstream reconfiguration needed |
-| **Stripe**   | No (Pseudonymization) | No (PII only) | Yes (Redaction) | Yes (pseudonymized) | New customer entry         | Built-in for legal compliance     |
+| Provider     | Soft Delete           | Full Deletion | Anonymization   | Audit Logs Retained                                                                         | Reinstatement              | Compliance Handling                                                   |
+|--------------|-----------------------|---------------|-----------------|---------------------------------------------------------------------------------------------|----------------------------|-----------------------------------------------------------------------|
+| **Auth0**    | No                    | Yes           | No              | Yes (logs stored independently from user profile; not automatically linked to deleted user) | Re-register only           | Customer responsible for downstream compliance and retention policies |
+| **Okta**     | Yes                   | Yes           | Manual          | Yes (for audit and regulatory compliance)                                                   | Re-activate or re-register | Customer responsible for downstream compliance and retention policies |
+| **Azure AD** | Yes (30d)             | Yes           | Partial         | Yes (up to 1 year)                                                                          | Restore within window      | Customer responsible for downstream compliance and retention policies |
+| **Google**   | Yes                   | Yes (20d+)    | Yes (in logs)   | Yes (de-identified)                                                                         | Re-register only           | Customer responsible for downstream compliance and retention policies |
+| **Stripe**   | No (Pseudonymization) | No (PII only) | Yes (Redaction) | Yes (pseudonymized logs retained for AML and tax laws)                                      | New customer entry         | Built-in regulatory retention for AML, tax, fraud handling            |
 
 ---
 
@@ -27,7 +45,7 @@ To compare how major Identity Providers (IDPs) and Stripe implement the Right to
 * **Anonymization**: Not applied.
 * **Audit Logs**: Retained independently from the user record.
 * **Reinstatement**: Requires full re-registration.
-* **Compliance Handling**: Left to client implementations.
+* **Compliance Handling**: Client applications must enforce retention policies.
 * **API Reference**: [Auth0 Delete User](https://auth0.com/docs/api/management/v2#!/Users/delete_users_by_id)
 
 ### 2.2 Okta
@@ -37,7 +55,7 @@ To compare how major Identity Providers (IDPs) and Stripe implement the Right to
 * **Anonymization**: Manual implementation.
 * **Audit Logs**: Retained for compliance.
 * **Reinstatement**: Possible if deactivated; requires re-registration otherwise.
-* **Compliance Handling**: Delegated to integrated apps.
+* **Compliance Handling**: Requires customer-side implementation and downstream compliance.
 * **API Reference**: [Okta Users API](https://developer.okta.com/docs/reference/api/users/)
 
 ### 2.3 Microsoft Entra ID (Azure AD)
@@ -57,8 +75,9 @@ To compare how major Identity Providers (IDPs) and Stripe implement the Right to
 * **Anonymization**: Logs are de-identified.
 * **Audit Logs**: Retained with pseudonymization.
 * **Reinstatement**: Must re-register.
-* **Compliance Handling**: Delegated to app configuration.
-* **API Reference**: [Google Admin SDK - Directory API](https://developers.google.com/admin-sdk/directory/reference/rest/v1/users/delete)
+* **Compliance Handling**: Retention policies managed through Admin SDK config.
+* **API Reference
+  **: [Google Admin SDK - Directory API](https://developers.google.com/admin-sdk/directory/reference/rest/v1/users/delete)
 
 ### 2.5 Stripe
 
@@ -84,7 +103,7 @@ Erasure does not apply when data processing is:
 ### 3.2 Examples of PII That Must Be Retained
 
 | Data Type            | Reason                            | Retain/Anonymize                |
-| -------------------- | --------------------------------- | ------------------------------- |
+|----------------------|-----------------------------------|---------------------------------|
 | Invoices             | Tax compliance                    | ✅ Retain                        |
 | Wire transfers       | Anti-Money Laundering regulations | ✅ Retain                        |
 | Consent logs         | Legal requirement                 | ✅ Retain                        |
@@ -95,11 +114,19 @@ Erasure does not apply when data processing is:
 
 ## 4. Applying These Lessons to Sentry (JPMorgan Use Case)
 
-### 4.1 Context and Challenges
+### Definitions
 
-* Sentry is a federated identity gateway — it does not own downstream application data.
-* RTBF must propagate to all integrated systems.
-* Some downstream data is exempt from deletion.
+* **Anonymization**: Permanently removes all identifiable information from data so that it can never be traced back to an individual. Used when data is no longer needed for any user-specific purpose.
+* **Pseudonymization**: Replaces identifiers with artificial ones (e.g., random strings or tokens). The original data can be recovered under strict controls. Useful for use cases like fraud investigation or audits where traceability is still needed.
+* **Redaction**: Selectively hides or masks parts of personal data (e.g., hiding name/email in logs). Typically used when logs must be retained but direct identifiers must be concealed.
+
+### When to Use Each
+
+| Technique            | Use Case Example                         | Re-identifiable? | Typical Purpose                              |
+| -------------------- | ---------------------------------------- | ---------------- | -------------------------------------------- |
+| **Redaction**        | Audit logs, support logs                 | No               | Obscure identifiers without removing context |
+| **Anonymization**    | Deleted users with no regulatory linkage | No               | Privacy preservation, analytics              |
+| **Pseudonymization** | AML, audit trails, fraud detection       | Yes (controlled) | Retain functionality with limited risk       |
 
 ### 4.2 Recommended RTBF Architecture
 
@@ -113,7 +140,8 @@ Erasure does not apply when data processing is:
 
 * **Audit logs** serve legal and forensic purposes. Deleting them may violate audit integrity.
 * **Redaction** allows PII (e.g., names, emails) to be replaced with placeholders while retaining context.
-* **Anonymization** often removes links to the original identity irreversibly. Redaction is reversible only by design, depending on compliance rules.
+* **Anonymization** often removes links to the original identity irreversibly. Redaction is reversible only by design,
+  depending on compliance rules.
 
 ### 4.4 Pseudonymization vs. Anonymization
 
@@ -153,15 +181,20 @@ Erasure does not apply when data processing is:
 
 **A:** Pseudonymization is only used when necessary (e.g. audit and fraud systems). Re-identification requires controlled access to the mapping keys. We encrypt these mappings and limit access to privileged roles.
 
-### Q6: Will this introduce latency to the user deletion flow?
+### Q6: Why does Auth0 not anonymize PII in logs — isn’t that non-compliant?
+
+**A:** Auth0 retains logs separately from live identity records. These logs capture static values (e.g. email, user ID) at the time of the event and are not dynamically linked to the current user object. GDPR compliance is addressed through **purpose limitation** and **data minimization** (Articles 5(1)(b) and 5(1)(c)), ensuring logs are accessed only for specific, lawful uses and do not contain more data than necessary.
+
+The GDPR permits retaining log data if access is restricted, used for legitimate purposes (e.g. security or compliance), and cannot easily re-identify users. Anonymization or pseudonymization is encouraged, but not strictly required. Auth0 enables compliant use by keeping logs independent of active user identity and recommending masking/redaction during log access.
+### Q7: Will this introduce latency to the user deletion flow?
 
 **A:** No. Soft deletion in Sentry is immediate. RTBF propagation is asynchronous and tracked via job status logs. This ensures fast response with eventual downstream consistency.
 
-### Q7: What prevents a user from being re-provisioned after deletion?
+### Q8: What prevents a user from being re-provisioned after deletion?
 
 **A:** A "tombstone" record is retained to prevent re-activation. If the same identity attempts to re-register, the system flags it for review or blocks it outright depending on policy.
 
-### Q8: Is this model scalable for the 100+ systems integrated with Sentry?
+### Q9: Is this model scalable for the 100+ systems integrated with Sentry?
 
 **A:** Yes. Sentry acts as a coordinator, not a controller. We provide contracts, event formats, and audit interfaces, while each consumer implements deletion locally. Priority is given to systems with regulatory risk.
 
@@ -175,3 +208,4 @@ Erasure does not apply when data processing is:
 * [Google Cloud GDPR](https://cloud.google.com/security/gdpr)
 * [Stripe GDPR Overview](https://stripe.com/guides/general-data-protection-regulation)
 * [GDPR Article 17 - Right to Erasure](https://gdpr-info.eu/art-17-gdpr/)
+* [GDPR Article 5 - Principles Relating to Personal Data Processing](https://gdpr-info.eu/art-5-gdpr/)
