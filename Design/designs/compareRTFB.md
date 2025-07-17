@@ -2,10 +2,6 @@
 
 ## Objective
 
-Compare how leading IDPs and platforms like Stripe interpret these principles and helps define a compliant, auditable
-RTBF process for PAID at JPMorgan. how major IDPs and platforms (like Stripe) interpret and implement these
-principles.
-
 ### Why RTBF Matters
 
 RTBF, under GDPR Article 17, allows users to request deletion of their personal data. While often interpreted as
@@ -26,39 +22,18 @@ GDPR instead emphasizes:
 
 ## 1. Summary Table: RTBF Feature Comparison
 
-| Provider     | Soft Delete           | Full Deletion | Anonymization   | Audit Logs Retained                                                                         | Reinstatement              | Compliance Handling                                                   |
-|--------------|-----------------------|---------------|-----------------|---------------------------------------------------------------------------------------------|----------------------------|-----------------------------------------------------------------------|
-| **Auth0**    | No                    | Yes           | No              | Yes (logs stored independently from user profile; not automatically linked to deleted user) | Re-register only           | Customer responsible for downstream compliance and retention policies |
-| **Okta**     | Yes                   | Yes           | Manual          | Yes (for audit and regulatory compliance)                                                   | Re-activate or re-register | Customer responsible for downstream compliance and retention policies |
-| **Azure AD** | Yes (30d)             | Yes           | Partial         | Yes (up to 1 year)                                                                          | Restore within window      | Customer responsible for downstream compliance and retention policies |
-| **Google**   | Yes                   | Yes (20d+)    | Yes (in logs)   | Yes (de-identified)                                                                         | Re-register only           | Customer responsible for downstream compliance and retention policies |
-| **Stripe**   | No (Pseudonymization) | No (PII only) | Yes (Redaction) | Yes (pseudonymized logs retained for AML and tax laws)                                      | New customer entry         | Built-in regulatory retention for AML, tax, fraud handling            |
+| Provider      | Soft Delete           | Full Deletion | Anonymization          | Audit Logs Retained                                                                         | Reinstatement              | Compliance Handling                                                   |
+|---------------|-----------------------|---------------|------------------------|---------------------------------------------------------------------------------------------|----------------------------|-----------------------------------------------------------------------|
+| **Auth0**     | No                    | Yes           | No                     | Yes (logs stored independently from user profile; not automatically linked to deleted user) | Re-register only           | Customer responsible for downstream compliance and retention policies |
+| **Okta**      | Yes                   | Yes           | Manual                 | Yes (for audit and regulatory compliance)                                                   | Re-activate or re-register | Customer responsible for downstream compliance and retention policies |
+| **Azure AD**  | Yes (30d)             | Yes           | Partial                | Yes (up to 1 year)                                                                          | Restore within window      | Customer responsible for downstream compliance and retention policies |
+| **Google**    | Yes                   | Yes (20d+)    | Yes (in logs)          | Yes (de-identified)                                                                         | Re-register only           | Customer responsible for downstream compliance and retention policies |
+| **Stripe**    | No (Pseudonymization) | No (PII only) | Yes (Redaction)        | Yes (pseudonymized logs retained for AML and tax laws)                                      | New customer entry         | Built-in regulatory retention for AML, tax, fraud handling            |
+| **ForgeRock** | Yes (configurable)    | Yes           | Manual (policy-driven) | Yes (retained by default)                                                                   | Re-register only           | Customer responsible for downstream compliance and retention policies |
 
 ---
 
 ## 2. Provider-Specific RTBF Workflows
-
-### 2.1 Auth0
-
-* **Soft Delete**: Not supported.
-* **Full Deletion**: Supported via `DELETE /api/v2/users/{id}`.
-* **Anonymization**: Not applied.
-* **Audit Logs**: Retained independently from the user record.
-* **Reinstatement**: Requires full re-registration.
-* **Compliance Handling**: Client applications must enforce retention policies.
-* **API Reference**: [Auth0 Delete User](https://auth0.com/docs/api/management/v2#!/Users/delete_users_by_id)
-
-### 2.2 Okta
-
-* **Soft Delete**: Supported via `POST /api/v1/users/{id}/lifecycle/deactivate`.
-* **Full Deletion**: `DELETE /api/v1/users/{id}` (must deactivate first).
-* **Anonymization**: Manual implementation.
-* **Audit Logs**: Retained for compliance.
-* **Reinstatement**: Possible if deactivated; requires re-registration otherwise.
-* **Compliance Handling**: Requires customer-side implementation and downstream compliance.
-* **API Reference**: [Okta Users API](https://developer.okta.com/docs/reference/api/users/)
-
-### 2.3 Microsoft Entra ID (Azure AD)
 
 * **Soft Delete**: Implicit — deleted users retained for 30 days.
 * **Full Deletion**: `DELETE /users/{id}` via Microsoft Graph API.
@@ -88,6 +63,16 @@ GDPR instead emphasizes:
 * **Reinstatement**: New customer creation.
 * **Compliance Handling**: Native support for Anti-Money Laundering (AML), tax retention.
 * **API Reference**: [Stripe Delete Customer](https://stripe.com/docs/api/customers/delete)
+
+### 2.6 ForgeRock
+
+* **Soft Delete**: Configurable via IDM policies or workflows.
+* **Full Deletion**: Executed through IDM REST API or policy triggers.
+* **Anonymization**: Manual or policy-driven depending on deployment; supports scripted transforms.
+* **Audit Logs**: Retained by default unless purged by admin; masking can be configured.
+* **Reinstatement**: User must re-register.
+* **Compliance Handling**: Requires customer-side implementation and downstream integrations.
+* **API Reference**: [ForgeRock IDM Docs](https://backstage.forgerock.com/docs/idm/latest/)
 
 ---
 
@@ -127,26 +112,6 @@ Erasure does not apply when data processing is:
 | **Redaction**        | Audit logs, support logs                 | No               | Obscure identifiers without removing context |
 | **Anonymization**    | Deleted users with no regulatory linkage | No               | Privacy preservation, analytics              |
 | **Pseudonymization** | AML, audit trails, fraud detection       | Yes (controlled) | Retain functionality with limited risk       |
-
-### 4.2 Recommended RTBF Architecture
-
-1. **Soft delete user** in PAID (mark as inactive, revoke access).
-2. **Notify downstream systems** to remove or anonymize user data.
-3. **Track downstream responses** and document compliance reasons if data is retained.
-4. **Redact user PII in audit logs** — rather than deleting audit records, redact or replace PII fields to retain forensic and compliance trail without exposing sensitive data.
-5. **Ensure auditability** of actions taken per request.
-
-### 4.3 Why Redact PII Instead of Deleting or Anonymizing?
-
-* **Audit logs** serve legal and forensic purposes. Deleting them may violate audit integrity.
-* **Redaction** allows PII (e.g., names, emails) to be replaced with placeholders while retaining context.
-* **Anonymization** often removes links to the original identity irreversibly. Redaction is reversible only by design,
-  depending on compliance rules.
-
-### 4.4 Pseudonymization vs. Anonymization
-
-* **Anonymization**: Irreversible removal of identifiers such that data cannot be traced back to the individual.
-* **Pseudonymization**: Replaces identifiers with artificial ones (e.g., tokenized strings), but allows re-linking under strict controls — useful for audit and fraud prevention use cases.
 
 ---
 
@@ -188,11 +153,54 @@ Erasure does not apply when data processing is:
 The GDPR permits retaining log data if access is restricted, used for legitimate purposes (e.g. security or compliance), and cannot easily re-identify users. Anonymization or pseudonymization is encouraged, but not strictly required. Auth0 enables compliant use by keeping logs independent of active user identity and recommending masking/redaction during log access.
 ### Q7: Will this introduce latency to the user deletion flow? 
 
-**A:** No. Soft deletion in PAID is immediate. RTBF propagation is asynchronous and tracked via job status logs. This ensures fast response with eventual downstream consistency.
+**A:** No. Soft deletion in PAID is immediate. RTBF propagation is asynchronous and tracked via job status logs. This
+ensures fast response with eventual downstream consistency.
 
-### Q8: Is this model scalable for the 100+ systems integrated with PAID?
+### Q8: Do we have an example of DPA in JPMC?
 
-**A:** Yes. PAID acts as a coordinator, not a controller. We provide contracts, event formats, and audit interfaces, while each consumer implements deletion locally. Priority is given to systems with regulatory risk.
+**A:** TBD.
+
+
+---
+
+## 7. Applicability to CCPA (California Consumer Privacy Act)
+
+While this document focuses on GDPR, PAID’s RTBF model also supports CCPA compliance:
+
+* **Right to Delete**: CCPA gives consumers the right to request deletion of personal information collected.
+* **Retention Exceptions**: CCPA allows businesses to retain data for legal obligations, security, or fraud prevention —
+  similar to GDPR exemptions.
+* **Anonymization vs. Deletion**: CCPA considers data that is anonymized or aggregated as exempt from deletion
+  obligations.
+* **Scope**: CCPA focuses on consumer data collected/sold/shared, and requires transparency in handling.
+
+---
+
+## 8. Downstream System Responsibilities (GDPR vs. CCPA)
+
+PAID operates as a federated identity front door and does not directly control PII within downstream applications.
+However, GDPR and CCPA have different expectations for how upstream systems like PAID interact with integrated
+consumers:
+
+### Responsibility Model
+
+| Obligation                            | GDPR Requirement      | CCPA Requirement          |
+|---------------------------------------|-----------------------|---------------------------|
+| Handle user identity deletion         | ✅ Required (Art. 17)  | ✅ Required (§1798.105)    |
+| Notify downstream systems             | ✅ Required (Art. 19)  | ✅ Best practice           |
+| Data Processing Agreements (DPAs)     | ✅ Mandatory (Art. 28) | ❌ Not explicitly required |
+| Provide RTBF APIs or events           | ✅ Recommended         | ✅ Recommended             |
+| Own audit log/data retention policies | ✅ Required            | ✅ Required                |
+| Track downstream compliance           | ✅ Recommended         | ❌ Not mandatory           |
+
+###  What PAID Should Do
+
+* Emit **RTBF events** to all connected applications with structured schema.
+* Maintain **integration contracts** that define each consumer’s responsibilities.
+* Log and trace downstream deletion acknowledgments.
+* Ensure **DPAs** exist with critical systems.
+* Provide **interfaces for monitoring** propagation and audit status.
+* Classify PII vs compliance-critical metadata for each consumer.
 
 ---
 
