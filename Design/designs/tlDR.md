@@ -1,48 +1,55 @@
-Certainly! Here's a **TL;DR (Too Long; Didn’t Read)** summary of your RTBF comparison document:
+Golden Pattern: ECS Fargate Production Service
+1. Root Cause of Previous Issues
 
----
+We received Datadog alerts:
 
-## 🔐 TL;DR – RTBF Implementation Across Identity Providers & Stripe
+“Number of Instances for X-Service in Production is below the expected threshold.”
 
-### 🧩 Why This Matters
+What we found:
 
-GDPR gives users the right to request deletion of their personal data (**Article 17**), but doesn’t require full deletion of all logs. Instead, it emphasizes:
+Our ECS service had the correct autoscaling policy (min=3, max=10 tasks, CPU/Memory target tracking).
 
-* **Purpose Limitation** – Data should only be used for its original intent.
-* **Data Minimization** – Only store what's necessary.
-* **Storage Limitation** – Don’t keep data longer than needed.
+However, the capacity provider strategy included Spot with base = 1.
 
----
+This forced ECS to always place at least one task on Spot capacity.
 
-### 📊 Summary of Provider Approaches
+Since Spot is unreliable (can be reclaimed or unavailable), that task sometimes failed to start.
 
-| Provider     | Soft Delete | Full Delete           | Audit Logs | PII Handling in Logs               |
-| ------------ | ----------- | --------------------- | ---------- | ---------------------------------- |
-| **Auth0**    | ❌           | ✅                     | Retained   | Static info; customer redacts      |
-| **Okta**     | ✅           | ✅                     | Retained   | Manual redaction                   |
-| **Azure AD** | ✅ (30d)     | ✅                     | Retained   | Partial                            |
-| **Google**   | ✅           | ✅ (20d+)              | Retained   | De-identified                      |
-| **Stripe**   | ❌           | ❌ (PII redacted only) | Retained   | Pseudonymized for AML & compliance |
+As a result: the autoscaling policy still wanted 3 tasks, but ECS could only place 2 (or fewer), leading to the alert.
 
-🛡️ **All providers require customers to handle downstream compliance and data retention**.
+👉 Root Cause: The autoscaling policy was fine, but the Spot base=1 guaranteed unreliable task placement.
 
----
+2. Capacity Provider Strategy
+   Why Spot Caused Issues
 
-### 🧰 Data Handling Best Practices
+Spot is cost-efficient but not production-safe.
 
-| Technique            | Use When...                              | Re-identifiable?   |
-| -------------------- | ---------------------------------------- | ------------------ |
-| **Redaction**        | Logs must be kept but identifiers hidden | ❌                  |
-| **Anonymization**    | Data is no longer needed at all          | ❌                  |
-| **Pseudonymization** | Retention needed for fraud/legal/audit   | ✅ (under controls) |
+By setting base = 1 on Spot, ECS was forced to run one task there, even if Fargate On-Demand had capacity.
 
----
+Best Practice for Production
 
-### ✅ PAID’s Recommended Approach
+Use only Fargate On-Demand.
 
-* Use **soft deletion** to revoke access but retain minimal records.
-* Emit **RTBF events** to downstream systems.
-* Apply **redaction** for logs, **pseudonymization** where compliance requires.
-* Ensure **traceability** without violating GDPR.
+base is not technically needed if you only have one provider. But keeping base = 1 improves readability, making it explicit that at least one task will always run on Fargate.
 
----
+
+Diagram (conceptual):
+ECS Service (Desired: 3 tasks)
+┌───────────────────────────┐
+│     Task 1 → Spot ❌       │  (fails if Spot unavailable)
+│     Task 2 → Fargate ✅    │
+│     Task 3 → Fargate ✅    │
+└───────────────────────────┘
+↓
+Datadog Alert: "Running < threshold"
+
+
+        ECS Service (Desired: 3–10 tasks)
+        ┌───────────────────────────┐
+        │ Task 1 → Fargate (AZ-A) ✅ │
+        │ Task 2 → Fargate (AZ-B) ✅ │
+        │ Task 3 → Fargate (AZ-A) ✅ │
+        │   ... scale up to 10 ...  │
+        └───────────────────────────┘
+                    ↓
+         Highly Available & Resilient
