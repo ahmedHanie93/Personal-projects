@@ -1,0 +1,79 @@
+@startuml
+skinparam DefaultFontName Arial
+skinparam RoundCorner 15
+skinparam Shadowing false
+skinparam ActivityBackgroundColor #fefefe
+skinparam ActivityBorderColor #333333
+
+title ALB Request Routing Logic
+
+|#e6f0ff|Priority 13-15, 18|
+start
+:Incoming Request:
+<b>Host</b>: login-sit.test.jpmorgan.com
+<b>Path</b>: /login-service/auth;
+
+if (Rules 13, 14, 15, 18 Match?) then (Yes)
+    note right
+        <b>Service:</b> login-service
+        <b>Env:</b> Test (login.test.*)
+        <b>Paths:</b> /login-service/*, /.well-known/*,
+        /oauth2/*, /session
+    end note
+    :Forward → **login-service** (Test Env);
+    stop
+else (No)
+endif
+
+|#e6f0ff|Priority 16-17|
+if (Rules 16, 17 Match?) then (Yes)
+    note right
+        <b>Service:</b> login-service-h2w
+        <b>Env:</b> Test (login.test.*)
+        <b>Paths:</b> /h2w-api/*, /login?idp=*
+    end note
+    :Forward → **login-service-h2w** (Test Env);
+    stop
+else (No)
+endif
+
+|#e6f0ff|Priority 26-29|
+if (Rules 26, 27, 28, 29 Match?) then (Yes)
+    note right
+        <b>Service:</b> login-service-sit
+        <b>Env:</b> SIT (login-sit.test.*)
+        <b>Paths:</b> /login-service/*, /.well-known/*,
+        /oauth2/*, /session
+    end note
+    :Forward → **login-service-sit** (SIT Env);
+    stop
+else (No)
+endif
+
+|#e6f0ff|Priority 30-31|
+if (Rules 30, 31 Match?) then (Yes)
+    note right
+        <b>Service:</b> login-service-sit-h2w
+        <b>Env:</b> SIT (login-sit.test.*)
+        <b>Paths:</b> /h2w-api/*, /login
+    end note
+    :Forward → **login-service-sit-h2w** (SIT Env);
+    stop
+else (No)
+endif
+
+|#e6f0ff|Priority 59|
+if (Rule 59 Match?) then (Yes)
+    note right
+        <b>Service:</b> ui-service
+        <b>Catch-all:</b> Host: login.*
+    end note
+    :Forward → **ui-service** (Catch-all);
+    stop
+else (No)
+endif
+
+:No match → 404 Error;
+stop
+
+@enduml
