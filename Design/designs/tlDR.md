@@ -110,4 +110,4 @@ note right of User
 
 @enduml
 ```
-%{TIMESTAMP_ISO8601:log_timestamp}\s+\[forgerock-monitoring\]\s+-{2,3}\s+\[id-prod\]:\s+%{TIMESTAMP_ISO8601:event_timestamp}:\s+\("?_eventId"?:\s+"%{UUID:event_id}".*?"client":\s+\{"ip":\s+"%{IP:client_ip}",\s+"port":\s+%{INT:client_port}\}.*?"eventName":\s+"%{WORD:event_name}".*?"method":\s+"%{WORD:http_method}".*?"path":\s+"%{URI:http_path}".*?"statusCode":\s+"?%{INT:http_status}"?.*?"transactionid":\s+"%{DATA:transaction_id}".*?"userId":\s+"%{DATA:user_id}".*$
+%{date("yyyy-MM-dd HH:mm:ss"):log_timestamp}\s+\[forgerock-monitoring\]\s+-{2,3}\s+\[id-prod\]:\s+%{date("yyyy-MM-dd'T'HH:mm:ss.SSSSSSSSSZ"):event_timestamp}:\s+\("_eventId":\s+"%{uuid:event_id}".*?"client":\s+\{"ip":\s+"%{ip:client_ip}",\s+"port":\s+%{integer:client_port}\}.*?"method":\s+"%{word:http_method}".*?"path":\s+"%{notSpace:http_path}".*?"statusCode":\s+"?%{integer:http_status}"?.*?"transactionid":\s+"%{notSpace:transaction_id}".*?"userId":\s+"%{notSpace:user_id}".*$
