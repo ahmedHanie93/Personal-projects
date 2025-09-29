@@ -1,5 +1,4 @@
 @startuml
-!theme plain
 autonumber
 
 ' === Styling ===
@@ -12,218 +11,220 @@ skinparam sequence {
   LifeLineBackgroundColor #f2f2f2
 }
 
-' Color lifelines by domain
-skinparam participant {
-  BackgroundColor<<Sentry>> #d0e6ff
-  BackgroundColor<<FRIDA>>  #ffe5cc
-  BackgroundColor<<App>>    #e8e8e8
-  BackgroundColor<<User>>   #ffffff
-}
-
 actor Bobby as User <<User>>
-participant JPMDB as "JPMDB App" <<App>>
-participant LAPI as "Sentry Login API" <<Sentry>>
-participant STS as "Sentry Token Service" <<Sentry>>
-participant FRS as "ForgeRock SaaS" <<FRIDA>>
-participant SIDP as "IDA Identity Provider" <<FRIDA>>
-participant EA as "Entitlement API" <<Sentry>>
-participant DS as "Directory Service" <<Sentry>>
-participant HIS as "Human Identity Service" <<Sentry>>
-participant KS as "KeyStore" <<Sentry>>
-participant AS as "Authorization Server" <<Sentry>>
-participant EC as "Entitlement Cache" <<Sentry>>
+participant JPMDB as "JPMDB App" #e8e8e8
+participant LAPI as "Sentry Login API" #d0e6ff
+participant STS as "Sentry Token Service" #d0e6ff
+participant FRS as "ForgeRock SaaS" #ffe5cc
+participant SIDP as "IDA Identity Provider" #ffe5cc
+participant EA as "Entitlement Adapter" #ffe5cc
+participant DS as "Dispatcher Service" #d0e6ff
+participant HIS as "Human Identity Service" #d0e6ff
+participant KS as "Key Service" #d0e6ff
+participant AS as "Authentication Service" #d0e6ff
+participant EC as "Elastic Cache" #d0e6ff
 
 == 0. Key Exchange & Setup ==
-AS -> KS: Request signing keys
-activate KS
-KS --> AS: Return signing keys
-deactivate KS
+group Initial Key Setup
+  AS -> KS: Request signing keys
+  activate KS
+  KS --> AS: Return signing keys
+  deactivate KS
 
-STS -> KS: Request signing keys
-activate KS
-KS --> STS: Return signing keys
-deactivate KS
+  STS -> KS: Request signing keys
+  activate KS
+  KS --> STS: Return signing keys
+  deactivate KS
 
-STS -> EA: Request EA public keys
-activate EA
-EA -> STS: Return EA public keys
-deactivate EA
+  STS -> EA: Request EA public keys
+  activate EA
+  EA --> STS: Return EA public keys
+  deactivate EA
 
-JPMDB -> STS: Request Sentry public keys
-activate JPMDB
-STS --> JPMDB: Return Sentry public keys
-deactivate JPMDB
+  JPMDB -> STS: Request Sentry public keys
+  activate JPMDB
+  STS --> JPMDB: Return Sentry public keys
+  deactivate JPMDB
 
-EA -> STS: Request Sentry public keys
-activate EA
-STS --> EA: Return Sentry public keys
-deactivate EA
+  EA -> STS: Request Sentry public keys
+  activate EA
+  STS --> EA: Return Sentry public keys
+  deactivate EA
 
-SIDP -> STS: Request Sentry public keys
-activate SIDP
-STS --> SIDP: Return Sentry public keys
-deactivate SIDP
-
-== 1. Authorization Request (PKCE) ==
-group First OIDC Flow: Sentry & JPMDB App
-note over User, LAPI
-<b>OIDC Authorization Code Flow between JPMDB App and Sentry</b>
-end note
-
-User -> JPMDB: Access app
-activate JPMDB
-JPMDB -> JPMDB: Generate PKCE verifier & code_challenge
-JPMDB -> User: Redirect to /authorize?client_id&code_challenge&state&scope
-deactivate JPMDB
-
-note right of User
-<b>Bobby is redirected to Sentry for secure OAuth2 login.</b>
-end note
-
-User -> LAPI: GET /authorize?client_id&code_challenge&state&scope
-activate LAPI
-LAPI -> STS: Forward /authorize?client_id&code_challenge&state&scope
-activate STS
-STS -> FRS: Forward /authorize?client_id&code_challenge&state&scope
-activate FRS
-
-note right of FRS
-<b>FRS checks if Bobby needs IDA authentication.</b><br>
-FR will get the custom_redirect_uri from its agent configuration.<br>
-Agent name is the client_id.
-end note
-
-FRS -> STS: Redirect to /authorize?idp=ida&client_id&code_challenge&state&scope
-deactivate FRS
-STS -> LAPI: Redirect to /authorize?idp=ida&client_id&code_challenge&state&scope
-deactivate STS
-LAPI -> User: Redirect to /authorize?idp=ida&client_id&code_challenge&state&scope
-deactivate LAPI
-
-== 2. Federation & Authentication ==
-group Second OIDC Flow: FR SaaS & IDA
-note over FRS, SIDP
-<b>OIDC Authorization Code Flow between FR SaaS and IDA</b>
-end note
-
-User -> LAPI: GET /authorize?idp=ida&client_id&code_challenge&state&scope
-activate LAPI
-LAPI -> FRS: Start federation journey
-deactivate LAPI
-activate FRS
-
-FRS -> FRS: Generate JWT (AuthID), Sentry PKCE verifier & challenge
-FRS -> User: Redirect to IDA /authorize?client_id&Sentry_code_challenge&state&scope&jwt_assertion
-deactivate FRS
-
-note right of User
-<b>Bobby authenticates with IDA.</b>
-end note
-
-User -> SIDP: GET /authorize?client_id&Sentry_code_challenge&state&scope&jwt_assertion
-activate SIDP
-SIDP -> User: Prompt for credentials
-User -> SIDP: POST /authenticate (User ID, Password)
-SIDP <-> User: IDA session created
-User -> SIDP: GET /authorize?client_id&code_challenge&state&scope&jwt_assertion
-SIDP -> SIDP: Verify JWT assertion
-SIDP -> User: Redirect to Sentry /authorize?code&state
-note right of User
-<b>IDA returns authorization code.</b>
-end note
-deactivate SIDP
-
-== 3. Federation Token Exchange & User Profile ==
-User -> LAPI: Redirect to /authorize?code&state
-activate LAPI
-LAPI -> FRS: Continue federation journey
-activate FRS
-
-FRS -> SIDP: POST /token (code, Sentry_code_verifier)
-activate SIDP
-SIDP -> SIDP: Verify PKCE
-note right of SIDP
-<b>Code verifier matches code challenge.</b>
-end note
-SIDP --> FRS: Return access_token, id_token, refresh_token
-deactivate SIDP
+  SIDP -> STS: Request Sentry public keys
+  activate SIDP
+  STS --> SIDP: Return Sentry public keys
+  deactivate SIDP
 end group
-note right of FRS
-<b>FRS normalizes user details and updates profile.</b>
-end note
 
-FRS -> DS: Update identity shadow data + scopes
-activate DS
-DS -> HIS: Update identity shadow data + scopes
-activate HIS
-HIS -> DS: Return identity data
-deactivate HIS
-DS --> FRS: Return identity data
-deactivate DS
+== 1. Primary OIDC Flow: JPMDB ↔ Sentry ==
+group Primary OIDC Flow [JPMDB ↔ Sentry]
+  note over User, LAPI
+  <b>Primary OIDC Authorization Code Flow</b>
+  end note
 
-FRS -> FRS: Create session cookie
-FRS -> LAPI: Return success, redirect to /authorize
-deactivate FRS
-LAPI -> User: Return success, redirect to /authorize
-deactivate LAPI
+  User -> JPMDB: Access app
+  activate JPMDB
+  JPMDB -> JPMDB: Generate PKCE verifier & code_challenge
+  JPMDB -> User: Redirect /authorize?client_id&code_challenge&state&scope
+  deactivate JPMDB
 
-note right of User
-<b>Starting Sentry OIDC flow for Banking App access.</b>
-end note
+  note right of User
+  <b>Redirected to Sentry for OAuth2 login</b>
+  end note
 
-== 4. Authorization Code Grant (PKCE) ==
-User -> LAPI: GET /authorize?client_id&code_challenge&state&scope
-activate LAPI
-LAPI -> STS: Forward /authorize?client_id&code_challenge&state&scope
-activate STS
-STS -> FRS: Forward /authorize?client_id&code_challenge&state&scope
-activate FRS
-FRS -> STS: Return /authorize?code&state
-deactivate FRS
+  User -> LAPI: GET /authorize?client_id&code_challenge&state&scope
+  activate LAPI
+  LAPI -> STS: Forward request
+  activate STS
+  STS -> FRS: Forward request
+  activate FRS
 
-STS -> EC: Store scopes for code
-activate EC
-EC -> STS: Success
-deactivate EC
+  note right of FRS
+  <b>FR checks if IDA auth is required
+  Uses custom_redirect_uri from config (client_id = agent name)
+  end note
 
-STS -> LAPI: Return /authorize?code&state
-deactivate STS
-LAPI -> User: Redirect to JPMDB /authorize?code&state
-deactivate LAPI
+  FRS -> STS: Redirect /authorize?idp=ida&...
+  deactivate FRS
+  STS -> LAPI: Redirect /authorize?idp=ida&...
+  deactivate STS
+  LAPI -> User: Redirect /authorize?idp=ida&...
+  deactivate LAPI
 
-User -> JPMDB: Redirect to /authorize?code&state
-activate JPMDB
+  ' === NESTED OIDC FLOW STARTS HERE ===
+  == 2. Nested OIDC Flow: FR SaaS ↔ IDA ==
+  group Nested OIDC Flow [FR SaaS ↔ IDA]
+    note over FRS, SIDP
+    <b>Nested OIDC Flow: FR SaaS ↔ IDA</b>
+    <i>Embedded within Primary OIDC Flow</i>
+    end note
+
+    User -> LAPI: GET /authorize?idp=ida&...
+    activate LAPI
+    LAPI -> FRS: Start federation
+    deactivate LAPI
+    activate FRS
+
+    FRS -> FRS: Generate JWT(AuthID), PKCE
+    FRS -> User: Redirect to IDA /authorize?...&jwt_assertion
+    deactivate FRS
+
+    note right of User
+    <b>User authenticates with IDA</b>
+    end note
+
+    User -> SIDP: GET /authorize?...&jwt_assertion
+    activate SIDP
+    SIDP -> User: Prompt for credentials
+    User -> SIDP: POST /authenticate (User ID, Password)
+    SIDP <-> User: IDA session created
+    User -> SIDP: GET /authorize?...&jwt_assertion
+    SIDP -> SIDP: Verify JWT assertion\n with sentry public keys
+    SIDP -> User: Redirect /authorize?code&state
+    note right of User
+    <b>IDA returns authorization code</b>
+    end note
+    deactivate SIDP
+
+    == 3. Federation Token Exchange & User Profile ==
+    group Token Exchange via FR SaaS
+      User -> LAPI: Redirect /authorize?code&state
+      activate LAPI
+      LAPI -> FRS: Continue federation
+      activate FRS
+
+      FRS -> SIDP: POST /token (code, verifier)
+      activate SIDP
+      SIDP -> SIDP: Verify PKCE
+      note right of SIDP
+      <b>Verifier matches challenge</b>
+      end note
+      SIDP --> FRS: Return access_token, id_token, refresh_token
+      deactivate SIDP
+
+      note right of FRS
+      <b>FR normalizes user profile & updates shadow data</b>
+      end note
+
+      FRS -> DS: Update identity shadow
+      activate DS
+      DS -> HIS: Update identity shadow
+      activate HIS
+      HIS --> DS: Return identity data
+      deactivate HIS
+      DS --> FRS: Return identity data
+      deactivate DS
+
+      FRS -> FRS: Create session cookie
+      FRS -> LAPI: Return success redirect
+      deactivate FRS
+      LAPI -> User: Redirect success
+      deactivate LAPI
+    end group
+  end group
+  ' === NESTED OIDC FLOW ENDS HERE ===
+
+  note right of User
+  <b>Continues Primary OIDC Flow for Banking App</b>
+  end note
+
+  == 4. Resume Primary OIDC Flow ==
+  User -> LAPI: GET /authorize?client_id&code_challenge&state&scope
+  activate LAPI
+  LAPI -> STS: Forward request
+  activate STS
+  STS -> FRS: Forward request
+  activate FRS
+  FRS -> STS: Return /authorize?code&state
+  deactivate FRS
+
+  STS -> EC: Store scopes for code
+  activate EC
+  EC --> STS: Success
+  deactivate EC
+
+  STS -> LAPI: Return /authorize?code&state
+  deactivate STS
+  LAPI -> User: Redirect to JPMDB /authorize?code&state
+  deactivate LAPI
+
+  User -> JPMDB: Redirect with code&state
+  activate JPMDB
 
 == 5. Token Exchange & Resource Access ==
-JPMDB -> LAPI: POST /token (code, code_verifier)
-activate LAPI
-LAPI -> STS: POST /token (code, code_verifier)
-activate STS
-STS -> FRS: Validate session, PKCE, generate token
-activate FRS
-FRS -> STS: Return access_token (aal=1)
-deactivate FRS
+  JPMDB -> LAPI: POST /token (code, code_verifier)
+  activate LAPI
+  LAPI -> STS: Forward /token (code, code_verifier)
+  activate STS
+  STS -> FRS: Forward /token
+  activate FRS
+  FRS -> FRS: Validate session & PKCE
+  FRS --> STS: Return access_token (aal=1)
+  deactivate FRS
 
-STS -> EC: Request scopes for code
-activate EC
-EC -> STS: Return stored scopes
-deactivate EC
+  STS -> EC: Request stored scopes
+  activate EC
+  EC --> STS: Return scopes
+  deactivate EC
 
-STS -> EA: TokenExchange with scopes
-activate EA
-EA -> EA: Validate Bobby's entitlement (simulate Sarah)
-EA -> EA: Switch Bobby with Sarah for sub in token
-EA -> STS: Return EA token (sub=Sarah)
-deactivate EA
+  STS -> EA: TokenExchange with scopes
+  activate EA
+  EA -> EA: Validate entitlement (simulate Sarah)
+  EA -> EA: Switch sub=Bobby → Sarah
+  EA --> STS: Return EA token (sub=Sarah)
+  deactivate EA
 
-STS -> LAPI: Return access_token (aal=1)
-deactivate STS
+  STS -> LAPI: Return access_token (aal=1)
+  deactivate STS
+  LAPI -> JPMDB: Return access_token
+
 end group
-LAPI -> JPMDB: Return access_token
-deactivate LAPI
+  deactivate LAPI
 
-JPMDB -> JPMDB: Verify access_token, show protected page
-JPMDB -> User: Present protected content
-deactivate JPMDB
+  JPMDB -> JPMDB: Verify token & show page
+  JPMDB -> User: Present protected content
+  deactivate JPMDB
+
 deactivate User
 @enduml
