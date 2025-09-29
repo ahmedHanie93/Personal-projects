@@ -81,8 +81,9 @@ group Primary OIDC Flow [JPMDB ↔ Sentry]
   activate FRS
 
   note right of FRS
-  <b>FR checks if IDA auth is required
-  Uses custom_redirect_uri from config (client_id = agent name)
+  <b>FR checks if IDA auth is required</b>
+  Uses custom_redirect_uri from config
+  (client_id = agent name)
   end note
 
   FRS -> STS: Redirect /authorize?idp=ida&...
@@ -92,7 +93,7 @@ group Primary OIDC Flow [JPMDB ↔ Sentry]
   LAPI -> User: Redirect /authorize?idp=ida&...
   deactivate LAPI
 
-  ' === NESTED OIDC FLOW STARTS HERE ===
+  ' === NESTED OIDC FLOW ===
   == 2. Nested OIDC Flow: FR SaaS ↔ IDA ==
   group Nested OIDC Flow [FR SaaS ↔ IDA]
     note over FRS, SIDP
@@ -120,7 +121,7 @@ group Primary OIDC Flow [JPMDB ↔ Sentry]
     User -> SIDP: POST /authenticate (User ID, Password)
     SIDP <-> User: IDA session created
     User -> SIDP: GET /authorize?...&jwt_assertion
-    SIDP -> SIDP: Verify JWT assertion\n with sentry public keys
+    SIDP -> SIDP: Verify JWT assertion\nwith sentry public keys
     SIDP -> User: Redirect /authorize?code&state
     note right of User
     <b>IDA returns authorization code</b>
@@ -163,7 +164,6 @@ group Primary OIDC Flow [JPMDB ↔ Sentry]
       deactivate LAPI
     end group
   end group
-  ' === NESTED OIDC FLOW ENDS HERE ===
 
   note right of User
   <b>Continues Primary OIDC Flow for Banking App</b>
@@ -192,7 +192,7 @@ group Primary OIDC Flow [JPMDB ↔ Sentry]
   User -> JPMDB: Redirect with code&state
   activate JPMDB
 
-== 5. Token Exchange & Resource Access ==
+  == 5. Token Exchange & Resource Access ==
   JPMDB -> LAPI: POST /token (code, code_verifier)
   activate LAPI
   LAPI -> STS: Forward /token (code, code_verifier)
@@ -218,10 +218,9 @@ group Primary OIDC Flow [JPMDB ↔ Sentry]
   STS -> LAPI: Return access_token (aal=1)
   deactivate STS
   LAPI -> JPMDB: Return access_token
-
-end group
   deactivate LAPI
 
+end group
   JPMDB -> JPMDB: Verify token & show page
   JPMDB -> User: Present protected content
   deactivate JPMDB
