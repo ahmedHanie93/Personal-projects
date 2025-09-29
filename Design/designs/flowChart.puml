@@ -1,79 +1,229 @@
 @startuml
-skinparam DefaultFontName Arial
-skinparam RoundCorner 15
-skinparam Shadowing false
-skinparam ActivityBackgroundColor #fefefe
-skinparam ActivityBorderColor #333333
+!theme plain
+autonumber
 
-title ALB Request Routing Logic
+' === Styling ===
+skinparam sequence {
+  GroupBorderColor black
+  GroupFontColor black
+  GroupFontSize 12
+  BoxPadding 15
+  LifeLineBorderColor black
+  LifeLineBackgroundColor #f2f2f2
+}
 
-|#e6f0ff|Priority 13-15, 18|
-start
-:Incoming Request:
-<b>Host</b>: login-sit.test.jpmorgan.com
-<b>Path</b>: /login-service/auth;
+' Color lifelines by domain
+skinparam participant {
+  BackgroundColor<<Sentry>> #d0e6ff
+  BackgroundColor<<FRIDA>>  #ffe5cc
+  BackgroundColor<<App>>    #e8e8e8
+  BackgroundColor<<User>>   #ffffff
+}
 
-if (Rules 13, 14, 15, 18 Match?) then (Yes)
-    note right
-        <b>Service:</b> login-service
-        <b>Env:</b> Test (login.test.*)
-        <b>Paths:</b> /login-service/*, /.well-known/*,
-        /oauth2/*, /session
-    end note
-    :Forward → **login-service** (Test Env);
-    stop
-else (No)
-endif
+actor Bobby as User <<User>>
+participant JPMDB as "JPMDB App" <<App>>
+participant LAPI as "Sentry Login API" <<Sentry>>
+participant STS as "Sentry Token Service" <<Sentry>>
+participant FRS as "ForgeRock SaaS" <<FRIDA>>
+participant SIDP as "IDA Identity Provider" <<FRIDA>>
+participant EA as "Entitlement API" <<Sentry>>
+participant DS as "Directory Service" <<Sentry>>
+participant HIS as "Human Identity Service" <<Sentry>>
+participant KS as "KeyStore" <<Sentry>>
+participant AS as "Authorization Server" <<Sentry>>
+participant EC as "Entitlement Cache" <<Sentry>>
 
-|#e6f0ff|Priority 16-17|
-if (Rules 16, 17 Match?) then (Yes)
-    note right
-        <b>Service:</b> login-service-h2w
-        <b>Env:</b> Test (login.test.*)
-        <b>Paths:</b> /h2w-api/*, /login?idp=*
-    end note
-    :Forward → **login-service-h2w** (Test Env);
-    stop
-else (No)
-endif
+== 0. Key Exchange & Setup ==
+AS -> KS: Request signing keys
+activate KS
+KS --> AS: Return signing keys
+deactivate KS
 
-|#e6f0ff|Priority 26-29|
-if (Rules 26, 27, 28, 29 Match?) then (Yes)
-    note right
-        <b>Service:</b> login-service-sit
-        <b>Env:</b> SIT (login-sit.test.*)
-        <b>Paths:</b> /login-service/*, /.well-known/*,
-        /oauth2/*, /session
-    end note
-    :Forward → **login-service-sit** (SIT Env);
-    stop
-else (No)
-endif
+STS -> KS: Request signing keys
+activate KS
+KS --> STS: Return signing keys
+deactivate KS
 
-|#e6f0ff|Priority 30-31|
-if (Rules 30, 31 Match?) then (Yes)
-    note right
-        <b>Service:</b> login-service-sit-h2w
-        <b>Env:</b> SIT (login-sit.test.*)
-        <b>Paths:</b> /h2w-api/*, /login
-    end note
-    :Forward → **login-service-sit-h2w** (SIT Env);
-    stop
-else (No)
-endif
+STS -> EA: Request EA public keys
+activate EA
+EA -> STS: Return EA public keys
+deactivate EA
 
-|#e6f0ff|Priority 59|
-if (Rule 59 Match?) then (Yes)
-    note right
-        <b>Service:</b> ui-service
-        <b>Catch-all:</b> Host: login.*
-    end note
-    :Forward → **ui-service** (Catch-all);
-    stop
-else (No)
-endif
+JPMDB -> STS: Request Sentry public keys
+activate JPMDB
+STS --> JPMDB: Return Sentry public keys
+deactivate JPMDB
 
-:No match → 404 Error;
-stop
+EA -> STS: Request Sentry public keys
+activate EA
+STS --> EA: Return Sentry public keys
+deactivate EA
 
+SIDP -> STS: Request Sentry public keys
+activate SIDP
+STS --> SIDP: Return Sentry public keys
+deactivate SIDP
+
+== 1. Authorization Request (PKCE) ==
+group First OIDC Flow: Sentry & JPMDB App
+note over User, LAPI
+<b>OIDC Authorization Code Flow between JPMDB App and Sentry</b>
+end note
+
+User -> JPMDB: Access app
+activate JPMDB
+JPMDB -> JPMDB: Generate PKCE verifier & code_challenge
+JPMDB -> User: Redirect to /authorize?client_id&code_challenge&state&scope
+deactivate JPMDB
+
+note right of User
+<b>Bobby is redirected to Sentry for secure OAuth2 login.</b>
+end note
+
+User -> LAPI: GET /authorize?client_id&code_challenge&state&scope
+activate LAPI
+LAPI -> STS: Forward /authorize?client_id&code_challenge&state&scope
+activate STS
+STS -> FRS: Forward /authorize?client_id&code_challenge&state&scope
+activate FRS
+
+note right of FRS
+<b>FRS checks if Bobby needs IDA authentication.</b><br>
+FR will get the custom_redirect_uri from its agent configuration.<br>
+Agent name is the client_id.
+end note
+
+FRS -> STS: Redirect to /authorize?idp=ida&client_id&code_challenge&state&scope
+deactivate FRS
+STS -> LAPI: Redirect to /authorize?idp=ida&client_id&code_challenge&state&scope
+deactivate STS
+LAPI -> User: Redirect to /authorize?idp=ida&client_id&code_challenge&state&scope
+deactivate LAPI
+
+== 2. Federation & Authentication ==
+group Second OIDC Flow: FR SaaS & IDA
+note over FRS, SIDP
+<b>OIDC Authorization Code Flow between FR SaaS and IDA</b>
+end note
+
+User -> LAPI: GET /authorize?idp=ida&client_id&code_challenge&state&scope
+activate LAPI
+LAPI -> FRS: Start federation journey
+deactivate LAPI
+activate FRS
+
+FRS -> FRS: Generate JWT (AuthID), Sentry PKCE verifier & challenge
+FRS -> User: Redirect to IDA /authorize?client_id&Sentry_code_challenge&state&scope&jwt_assertion
+deactivate FRS
+
+note right of User
+<b>Bobby authenticates with IDA.</b>
+end note
+
+User -> SIDP: GET /authorize?client_id&Sentry_code_challenge&state&scope&jwt_assertion
+activate SIDP
+SIDP -> User: Prompt for credentials
+User -> SIDP: POST /authenticate (User ID, Password)
+SIDP <-> User: IDA session created
+User -> SIDP: GET /authorize?client_id&code_challenge&state&scope&jwt_assertion
+SIDP -> SIDP: Verify JWT assertion
+SIDP -> User: Redirect to Sentry /authorize?code&state
+note right of User
+<b>IDA returns authorization code.</b>
+end note
+deactivate SIDP
+
+== 3. Federation Token Exchange & User Profile ==
+User -> LAPI: Redirect to /authorize?code&state
+activate LAPI
+LAPI -> FRS: Continue federation journey
+activate FRS
+
+FRS -> SIDP: POST /token (code, Sentry_code_verifier)
+activate SIDP
+SIDP -> SIDP: Verify PKCE
+note right of SIDP
+<b>Code verifier matches code challenge.</b>
+end note
+SIDP --> FRS: Return access_token, id_token, refresh_token
+deactivate SIDP
+end group
+note right of FRS
+<b>FRS normalizes user details and updates profile.</b>
+end note
+
+FRS -> DS: Update identity shadow data + scopes
+activate DS
+DS -> HIS: Update identity shadow data + scopes
+activate HIS
+HIS -> DS: Return identity data
+deactivate HIS
+DS --> FRS: Return identity data
+deactivate DS
+
+FRS -> FRS: Create session cookie
+FRS -> LAPI: Return success, redirect to /authorize
+deactivate FRS
+LAPI -> User: Return success, redirect to /authorize
+deactivate LAPI
+
+note right of User
+<b>Starting Sentry OIDC flow for Banking App access.</b>
+end note
+
+== 4. Authorization Code Grant (PKCE) ==
+User -> LAPI: GET /authorize?client_id&code_challenge&state&scope
+activate LAPI
+LAPI -> STS: Forward /authorize?client_id&code_challenge&state&scope
+activate STS
+STS -> FRS: Forward /authorize?client_id&code_challenge&state&scope
+activate FRS
+FRS -> STS: Return /authorize?code&state
+deactivate FRS
+
+STS -> EC: Store scopes for code
+activate EC
+EC -> STS: Success
+deactivate EC
+
+STS -> LAPI: Return /authorize?code&state
+deactivate STS
+LAPI -> User: Redirect to JPMDB /authorize?code&state
+deactivate LAPI
+
+User -> JPMDB: Redirect to /authorize?code&state
+activate JPMDB
+
+== 5. Token Exchange & Resource Access ==
+JPMDB -> LAPI: POST /token (code, code_verifier)
+activate LAPI
+LAPI -> STS: POST /token (code, code_verifier)
+activate STS
+STS -> FRS: Validate session, PKCE, generate token
+activate FRS
+FRS -> STS: Return access_token (aal=1)
+deactivate FRS
+
+STS -> EC: Request scopes for code
+activate EC
+EC -> STS: Return stored scopes
+deactivate EC
+
+STS -> EA: TokenExchange with scopes
+activate EA
+EA -> EA: Validate Bobby's entitlement (simulate Sarah)
+EA -> EA: Switch Bobby with Sarah for sub in token
+EA -> STS: Return EA token (sub=Sarah)
+deactivate EA
+
+STS -> LAPI: Return access_token (aal=1)
+deactivate STS
+end group
+LAPI -> JPMDB: Return access_token
+deactivate LAPI
+
+JPMDB -> JPMDB: Verify access_token, show protected page
+JPMDB -> User: Present protected content
+deactivate JPMDB
+deactivate User
 @enduml
