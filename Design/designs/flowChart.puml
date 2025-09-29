@@ -107,21 +107,21 @@ group Primary OIDC Flow [JPMDB ↔ Sentry]
     deactivate LAPI
     activate FRS
 
-    FRS -> FRS: Generate JWT(AuthID), PKCE
-    FRS -> User: Redirect to IDA /authorize?...&jwt_assertion
+    FRS -> FRS: Generate PKCE parameters
+    FRS -> User: Redirect to IDA /authorize?client_id&code_challenge&state&scope
     deactivate FRS
 
     note right of User
     <b>User authenticates with IDA</b>
     end note
 
-    User -> SIDP: GET /authorize?...&jwt_assertion
+    User -> SIDP: GET /authorize?client_id&code_challenge&state&scope
     activate SIDP
     SIDP -> User: Prompt for credentials
     User -> SIDP: POST /authenticate (User ID, Password)
     SIDP <-> User: IDA session created
-    User -> SIDP: GET /authorize?...&jwt_assertion
-    SIDP -> SIDP: Verify JWT assertion\nwith sentry public keys
+    User -> SIDP: GET /authorize?client_id&code_challenge&state&scope
+    SIDP -> SIDP: Validate client_id & redirect_uri
     SIDP -> User: Redirect /authorize?code&state
     note right of User
     <b>IDA returns authorization code</b>
@@ -135,11 +135,12 @@ group Primary OIDC Flow [JPMDB ↔ Sentry]
       LAPI -> FRS: Continue federation
       activate FRS
 
-      FRS -> SIDP: POST /token (code, verifier)
+      FRS -> SIDP: POST /token (code, verifier, client_id, client_secret)
       activate SIDP
-      SIDP -> SIDP: Verify PKCE
+      SIDP -> SIDP: Verify PKCE & client credentials
       note right of SIDP
       <b>Verifier matches challenge</b>
+      <b>Client secret validated</b>
       end note
       SIDP --> FRS: Return access_token, id_token, refresh_token
       deactivate SIDP
@@ -220,10 +221,10 @@ group Primary OIDC Flow [JPMDB ↔ Sentry]
   LAPI -> JPMDB: Return access_token
   deactivate LAPI
 
-end group
   JPMDB -> JPMDB: Verify token & show page
   JPMDB -> User: Present protected content
   deactivate JPMDB
+end group
 
 deactivate User
 @enduml
