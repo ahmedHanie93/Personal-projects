@@ -1,128 +1,154 @@
-# **ADR: Representing `simulated_id` in the OAuth2 Authorization Flow**
+# 🧾 **Architecture Decision Record: Handling Simulated Identity in OAuth2 Requests**
 
-**Date:** 2025-10-22
-**Status:** Proposed
-**Authors:** Sentry Architecture Group
-**Reviewers:** Identity & Entitlements Working Group
-**Context:** Human Identity Service (HIS) Integration
+## 📋 **Decision Overview**
 
----
-
-## **1. Context**
-
-As part of the Sentry-to-HIS migration, we introduced a **simulation mode** that enables authorized users to act on behalf of another persona for validation or testing.
-This requires securely transmitting a `simulated_id` during the `/authorize` flow so downstream services can distinguish between *simulator* and *simulatee* contexts.
-
-Two competing design options emerged:
-
-1. Embed `simulated_id` in the OAuth2 **`scope`** parameter.
-2. Send `simulated_id` as a **separate encrypted parameter** alongside standard OAuth2 parameters.
-
-This ADR evaluates both approaches with respect to **security**, **maintainability**, **standards compliance**, and **implementation complexity**.
+| **Category**         | **Details**                                                                |
+|----------------------|----------------------------------------------------------------------------|
+| **Title**            | Simulated Identity Parameter Strategy                                      |
+| **Status**           | Proposed                                                                   |
+| **Decision Drivers** | Security, Maintainability, Standards Alignment, Extensibility              |
+| **Affected Systems** | Sentry OAuth2/OIDC Authorization Flow, ForgeRock Agents, STS Token Service |
 
 ---
 
-## **2. Options**
+## 🎯 **Summary**
 
-### **Option A – `simulated_id` in Scope**
+To support identity simulation flows, the system must pass a **simulated user identifier (`simulated_id`)** from the
+client to Sentry’s authorization endpoint.
 
-**Example:**
+This ADR evaluates three design alternatives:
+
+1. **Scope-based embedding**
+2. **Separate parameter**
+3. **Config-encoded parameter (proposed hybrid)**
+
+After evaluating security, maintainability, and extensibility, the **Config-encoded parameter** approach is recommended.
+
+---
+
+## ⚙️ **Alternatives Considered**
+
+| #     | Approach                                   | Description                                                                                                                                             |
+|-------|--------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **1** | **Scope-based embedding**                  | Include `simulated_id` as part of the `scope` (e.g., `scope=openid simulate:<encrypted_id>`).                                                           |
+| **2** | **Separate parameter**                     | Add a new `simulated_id` field alongside existing OAuth2 parameters.                                                                                    |
+| **3** | **Config-encoded parameter (recommended)** | Introduce a single `config` parameter that encodes simulation-related attributes (e.g., `simulated_id`, `alias_id`) as a Base64URL-encoded JSON object. |
+
+---
+
+## 🔍 **Comparison**
+
+### **Technical and Functional**
+
+| **Aspect**                      | **Scope-Based**                   | **Separate Param**                         | **Config-Encoded (Recommended)**                  |
+|---------------------------------|-----------------------------------|--------------------------------------------|---------------------------------------------------|
+| **Standards Alignment**         | ❌ Misuses scope semantics         | ⚠️ Custom param (non-standard but allowed) | ✅ Compliant OAuth2 extension                      |
+| **Implementation Simplicity**   | ⚠️ Requires parsing logic         | ✅ Simple validation                        | ⚠️ Requires encoding/decoding                     |
+| **Extensibility**               | ❌ Limited — scope grows unbounded | ❌ Each new field needs a new param         | ✅ Easily add new config fields                    |
+| **Caching & STS Compatibility** | ✅ Existing scope caching          | ❌ Requires Redis schema update             | ⚠️ Cache decoded payload                          |
+| **Debugging**                   | ❌ Opaque and cluttered            | ✅ Readable logs                            | ⚠️ Requires decoding step                         |
+| **Security Boundary**           | ❌ Mixed with non-permission data  | ✅ Isolated field                           | ✅ Encrypted `simulated_id`, minimal exposure      |
+| **Auditability**                | ❌ Poor visibility                 | ✅ Explicit in logs                         | ✅ Config easily logged (without sensitive values) |
+
+---
+
+## 🔐 **Security Considerations**
+
+| **Threat**                  | **Risk**                         | **Mitigation**                                                   |
+|-----------------------------|----------------------------------|------------------------------------------------------------------|
+| **MITM tampering**          | Attacker modifies `simulated_id` | All traffic over HTTPS + encrypted `simulated_id`                |
+| **Parameter injection**     | Attacker adds fake `config`      | Whitelist allowed params; validate signature                     |
+| **Sensitive data exposure** | Logs contain raw identifiers     | Only `simulated_id` encrypted; `alias_id` stored as plain string |
+| **Replay or forgery**       | Reuse of valid config            | Optional JWS signature for config payload integrity              |
+
+---
+
+## 🧩 **Example Implementations**
+
+### **Option 1: Scope-Based**
 
 ```
-scope=openid profile simulate:eyJzaW11bGF0ZWRfaWQiOiAiYWJjMTIzIn0=
-```
-
-### **Option B – `simulated_id` as Separate Encrypted Parameter**
-
-**Example:**
-
-```
-/authorize?response_type=code
-&client_id=abc
-&redirect_uri=https://client.example/callback
-&scope=openid profile
-&simulated_id=eyJzaW11bGF0ZWRfaWQiOiAiYWJjMTIzIn0=
+GET /authorize?
+ client_id=admin-tool&
+ scope=openid profile simulate:EncryptedSimID123&
+ response_type=code&
+ state=xyz123
 ```
 
 ---
 
-## **3. Comparison Summary**
+### **Option 2: Separate Parameter**
 
-| **Dimension**                          | **Option A – In Scope**                                                                                            | **Option B – Separate Parameter**                                                                                    |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
-| **Standards Compliance**               | Conforms to RFC6749 §3.3 (scope syntax). Overloading `scope` for non-authorization semantics deviates from intent. | Fully compliant with RFC6749 §4.1.1, which allows unrecognized parameters. Recommended for custom extensions.        |
-| **Separation of Concerns**             | Mixes *authorization intent* (what access is requested) with *execution context* (simulation).                     | Clean separation between access scope and context metadata.                                                          |
-| **Security**                           | Harder to encrypt/decrypt just one segment of scope. Parsing errors risk partial exposure.                         | Easier to encrypt entire parameter (`AES/GCM`) and handle centrally. Reduces risk of tampering or decoding mistakes. |
-| **Implementation Complexity**          | Requires modifying scope parsing logic in multiple components (STS, HIS, Entitlement Adapter).                     | Minimal: add parameter validation and encryption/decryption at gateway.                                              |
-| **Downstream Integration**             | Reuses existing Redis cache for scope propagation, but introduces non-semantic tokens.                             | Requires small cache schema update for `simulated_id` passthrough but keeps scopes semantically pure.                |
-| **Extensibility**                      | Harder to evolve if additional simulation attributes are needed (e.g., `reason`, `session_type`).                  | Naturally supports future extensibility through namespaced parameters.                                               |
-| **Operational Clarity**                | Logs and metrics show opaque scope strings, making troubleshooting harder.                                         | Distinct parameter improves observability and auditing.                                                              |
-| **Consistency with Existing Patterns** | Consistent with legacy “alias_id” and “stepup” scopes, though these were exceptions.                               | Aligns with modern OAuth2 extension patterns and identity platform evolution.                                        |
+```
+GET /authorize?
+ client_id=admin-tool&
+ scope=openid profile&
+ simulated_id=EncryptedSimID123&
+ response_type=code&
+ state=xyz123
+```
 
 ---
 
-## **4. Standards & Security Considerations**
+### **Option 3: Config-Encoded (Recommended)**
 
-* **RFC 6749 §4.1.1** explicitly states that authorization servers **must ignore unrecognized request parameters**, making the inclusion of `simulated_id` compliant.
-* **RFC 6819 (OAuth 2.0 Threat Model)** highlights **query parameter tampering** as a potential attack vector.
-  Using **TLS** and **encryption at rest and in transit (AES-GCM)** mitigates man-in-the-middle and replay risks.
-* Since `simulated_id` is **AES-encrypted** and **validated server-side**, tampering attempts will be detected through signature verification.
-* The **presence of `simulated_id`** automatically infers simulation mode; Sentry does not determine read-only behavior — this remains the **Entitlement Adapter’s responsibility**.
+```
+GET /authorize?
+ client_id=admin-tool&
+ scope=openid profile email&
+ config=eyJzaW11bGF0ZWRfaWQiOiAiRW5jcnlwdGVkU3RyaW5nIiwgImFsaWFzX2lkIjogImJvYmJ5LWFsaWFzLTEyMyJ9&
+ response_type=code&
+ state=xyz123
+```
 
----
+Decoded JSON:
 
-## **5. Implementation Notes**
-
-### **For Separate Parameter Approach**
-
-* The `simulated_id` parameter will be AES-GCM encrypted with a per-tenant key.
-* During `/authorize`, its presence infers simulation context.
-* When forwarded to the Entitlement Adapter, both `simulator_id` and `simulatee_id` are provided; Entitlement determines resulting `scope` (e.g., read-only).
-* The parameter is stored ephemerally and never persisted beyond session lifetime.
-
-### **For Scope Approach (Rejected)**
-
-* Would require partial decryption and recomposition of the `scope` string.
-* Increases parsing and error-handling complexity across multiple integration points.
-* Makes `scope` semantics inconsistent across different request types.
+```json
+{
+  "simulated_id": "<EncryptedValue>",
+  "alias_id": "bobby-alias-123"
+}
+```
 
 ---
 
-## **6. Decision**
 
-We will **send `simulated_id` as a separate encrypted parameter** in the OAuth2 authorization request.
+## ⚖️ **Decision Rationale**
 
-### **Rationale**
+| **Factor**                         | **Weight** | **Preferred Option** |
+|------------------------------------|------------|----------------------|
+| Standards Alignment                | High       | ✅ Config             |
+| Maintainability                    | High       | ✅ Config             |
+| Security & Auditability            | High       | ✅ Config             |
+| Implementation Complexity          | Medium     | ⚠️ Separate Param    |
+| Compatibility with Existing Scopes | Medium     | ⚠️ Scope             |
+| Extensibility                      | High       | ✅ Config             |
 
-* Maintains clear semantic separation between **authorization intent** and **execution context**.
-* Complies with **OAuth2 and OIDC extension mechanisms**.
-* Simplifies encryption handling and downstream logic.
-* Improves observability and reduces coupling with legacy scope-based patterns.
+**Summary:**
 
----
-
-## **7. Consequences**
-
-| **Positive**                                | **Negative**                                           |
-| ------------------------------------------- | ------------------------------------------------------ |
-| Cleaner, standards-aligned contract         | Minor update to cache schema and request validators    |
-| Easier debugging and audit visibility       | Requires slight client update to include new parameter |
-| Reduced risk of malformed or exposed scopes | Breaks with legacy “alias_id” scope convention         |
+* The `config` parameter **encapsulates extension data cleanly**, without violating OAuth2 semantics.
+* It supports **encrypted sensitive data** and **readable auxiliary fields** (like `alias_id`).
+* It scales better than adding multiple top-level parameters.
 
 ---
 
-## **8. Final Recommendation**
+## 🚀 **Implementation Plan**
 
-Adopt **Option B – Separate Encrypted Parameter (`simulated_id`)**
-This approach separates *authorization* from *context*, follows the extension model defined by RFC 6749, and simplifies both security and maintainability.
-It also future-proofs the simulation capability for richer use cases (multi-persona testing, hierarchical simulations, etc.) while keeping the Sentry identity contract clean and evolvable.
+| **Phase**                 | **Activities**                                           | **Deliverables**            |
+|---------------------------|----------------------------------------------------------|-----------------------------|
+| **1. Foundation**         | Update OIDC contract; implement config param parser      | Updated API spec & schema   |
+| **2. Integration**        | Extend Redis session cache; modify token exchange        | Working end-to-end flow     |
+| **3. Security Hardening** | Encrypt `simulated_id`; sign config payload              | Secure and validated config |
+| **4. Rollout**            | Update SDKs and client docs; deprecate scope-based usage | Adopted new standard        |
 
 ---
 
-**References:**
 
-* [RFC 6749: The OAuth 2.0 Authorization Framework](https://datatracker.ietf.org/doc/html/rfc6749)
-* [RFC 6819: OAuth 2.0 Threat Model and Security Considerations](https://datatracker.ietf.org/doc/html/rfc6819)
-* [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0.html)
+## ✅ **Final Recommendation**
+
+> **Adopt the Config-encoded parameter approach**.
+> This design isolates simulation data from permission scopes, supports encrypted and unencrypted
+> attributes (`simulated_id`, `alias_id`), and aligns with OAuth2 extension best practices.
+> It offers a scalable, secure, and auditable foundation for future authorization-context extensions.
 
 ---
