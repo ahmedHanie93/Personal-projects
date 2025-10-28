@@ -151,4 +151,92 @@ Decoded JSON:
 > attributes (`simulated_id`, `alias_id`), and aligns with OAuth2 extension best practices.
 > It offers a scalable, secure, and auditable foundation for future authorization-context extensions.
 
+# 🧾 ADR: JWE Hybrid Encryption Using CEK and Recipient Public Key
+
+**Status:** Accepted
+**Date:** 2025-10-25
+
 ---
+
+### **Context**
+
+We need to securely transmit sensitive payloads.
+Asymmetric encryption ensures safe key exchange, while symmetric encryption offers performance for large payloads.
+
+---
+
+### **Decision**
+
+Adopt **JSON Web Encryption (JWE)** using a **hybrid encryption model**:
+
+1. Generate a random **Content Encryption Key (CEK)**.
+2. Encrypt payload with CEK (**AES-256-GCM**).
+3. Encrypt CEK with recipient’s **public key** (**RSA-OAEP**).
+4. Package result into a JWE Compact Serialization (five dot-separated parts).
+    ```
+    BASE64URL(Protected Header)
+    .
+    BASE64URL(Encrypted Key)
+    .
+    BASE64URL(IV)
+    .
+    BASE64URL(Ciphertext)
+    .
+    BASE64URL(Authentication Tag)
+    ```
+
+**JWE Structure:**
+
+| **Field**       | **Description**                                | **Example Algorithm**                |
+| --------------- | ---------------------------------------------- | ------------------------------------ |
+| `protected`     | Header defining algorithms                     | `{"alg":"RSA-OAEP","enc":"A256GCM"}` |
+| `encrypted_key` | CEK encrypted with recipient public key        | RSA-OAEP output                      |
+| `iv`            | Initialization vector for symmetric encryption | 96-bit random                        |
+| `ciphertext`    | Payload encrypted with CEK                     | AES-256-GCM ciphertext               |
+| `tag`           | Authentication tag for integrity               | GCM tag                              |
+
+
+---
+
+### **PlantUML – Encryption Flow**
+
+```plantuml
+@startuml
+title JWE Hybrid Encryption Flow
+
+actor Sender
+
+Sender -> Sender: Generate random CEK
+Sender -> Sender: Encrypt payload using CEK (AES-256-GCM)
+Sender -> Recipient: Encrypt CEK with Recipient Public Key (RSA-OAEP)
+Sender -> Sender: Assemble JWE (Header + EncryptedKey + IV + Ciphertext + Tag)
+Sender -> Recipient: Send JWE Token
+Recipient -> Recipient: Decrypt CEK with Private Key
+Recipient -> Recipient: Decrypt payload using CEK
+@enduml
+```
+
+---
+
+### **Example**
+
+#### 🔹 **Before Encryption**
+
+```json
+{
+  "user": "ahmed.hanie",
+  "role": "engineer",
+  "exp": 1735096200
+}
+```
+
+#### 🔹 **After Encryption (JWE Compact Form — 5 Parts)**
+
+```
+eyJhbGciOiJSU0EtT0FFUCIsImVuYyI6IkEyNTZHQ00ifQ.
+OKOawDo13gRp2ojaHV7LFpPqV8iYyZ7T3NDW7A5Sf0bPBOh5DC.
+48V1_ALb6US04U3b.
+5eym8YV7P09xu9nICh7O4g.
+XFBoMYUZodetZdvTiFvSkQ
+```
+
