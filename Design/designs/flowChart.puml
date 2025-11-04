@@ -51,10 +51,9 @@ group Initial Key Setup
   STS --> EA: Return Sentry public keys
   deactivate EA
 
-  SIDP -> STS: Request Sentry public keys
-  activate SIDP
-  STS --> SIDP: Return Sentry public keys
-  deactivate SIDP
+  note right of EA
+  <b>EA stores Sentry public keys</b>\nfor JWT client assertion
+  end note
 end group
 
 == 1. Primary OIDC Flow: JPMDB ↔ Sentry ==
@@ -86,11 +85,11 @@ group Primary OIDC Flow [JPMDB ↔ Sentry]
   (client_id = agent name)
   end note
 
-  FRS -> STS: Redirect /authorize?idp=ida&...
+  FRS -> STS: Redirect /authorize?idp=ida&client_id&code_challenge&state&scope
   deactivate FRS
-  STS -> LAPI: Redirect /authorize?idp=ida&...
+  STS -> LAPI: Redirect /authorize?idp=ida&client_id&code_challenge&state&scope
   deactivate STS
-  LAPI -> User: Redirect /authorize?idp=ida&...
+  LAPI -> User: Redirect /authorize?idp=ida&client_id&code_challenge&state&scope
   deactivate LAPI
 
   ' === NESTED OIDC FLOW ===
@@ -101,45 +100,58 @@ group Primary OIDC Flow [JPMDB ↔ Sentry]
     <i>Embedded within Primary OIDC Flow</i>
     end note
 
-    User -> LAPI: GET /authorize?idp=ida&...
+    note right of User
+    <b>User arrives at Sentry with IDA parameter</b>
+    end note
+
+    User -> LAPI: GET /authorize?idp=ida&client_id&code_challenge&state&scope
     activate LAPI
-    LAPI -> FRS: Start federation
+    LAPI -> FRS: Start federation journey
     deactivate LAPI
     activate FRS
 
-    FRS -> FRS: Generate PKCE parameters
-    FRS -> User: Redirect to IDA /authorize?client_id&code_challenge&state&scope
+    FRS -> FRS: Generate PKCE parameters for IDA flow
+    FRS -> User: Redirect to IDA /authorize?client_id&code_challenge&state&scope&redirect_uri=[FRS_callback]
+    note right of FRS
+    <b>FR redirects user to IDA with</b>\nFR's callback URL as redirect_uri
+    end note
     deactivate FRS
 
     note right of User
-    <b>User authenticates with IDA</b>
+    <b>User redirected to IDA for authentication</b>
     end note
 
-    User -> SIDP: GET /authorize?client_id&code_challenge&state&scope
+    User -> SIDP: GET /authorize?client_id&code_challenge&state&scope&redirect_uri=[FRS_callback]
     activate SIDP
     SIDP -> User: Prompt for credentials
     User -> SIDP: POST /authenticate (User ID, Password)
+    SIDP -> SIDP: Validate credentials
     SIDP <-> User: IDA session created
-    User -> SIDP: GET /authorize?client_id&code_challenge&state&scope
     SIDP -> SIDP: Validate client_id & redirect_uri
-    SIDP -> User: Redirect /authorize?code&state
+    SIDP -> User: Redirect to [FRS_callback]?code&state
     note right of User
-    <b>IDA returns authorization code</b>
+    <b>IDA redirects back to FR callback URL</b>\nwith authorization code
     end note
     deactivate SIDP
 
     == 3. Federation Token Exchange & User Profile ==
     group Token Exchange via FR SaaS
-      User -> LAPI: Redirect /authorize?code&state
-      activate LAPI
-      LAPI -> FRS: Continue federation
+      note right of User
+      <b>User arrives at FR callback with code</b>
+      end note
+
+      User -> FRS: GET /callback?code&state
       activate FRS
 
-      FRS -> SIDP: POST /token (code, verifier, client_id, client_secret)
+      note right of FRS
+      <b>FR exchanges code for tokens from IDA</b>
+      end note
+
+      FRS -> SIDP: POST /token (code, code_verifier, client_id, client_secret)
       activate SIDP
       SIDP -> SIDP: Verify PKCE & client credentials
       note right of SIDP
-      <b>Verifier matches challenge</b>
+      <b>Code verifier matches challenge</b>
       <b>Client secret validated</b>
       end note
       SIDP --> FRS: Return access_token, id_token, refresh_token
@@ -158,16 +170,18 @@ group Primary OIDC Flow [JPMDB ↔ Sentry]
       DS --> FRS: Return identity data
       deactivate DS
 
-      FRS -> FRS: Create session cookie
-      FRS -> LAPI: Return success redirect
+      FRS -> FRS: Create Sentry session cookie
+      FRS -> User: Redirect to Sentry /authorize?client_id&code_challenge&state&scope
+      note right of FRS
+      <b>FR redirects user back to Sentry</b>\nto continue primary OIDC flow
+      end note
       deactivate FRS
-      LAPI -> User: Redirect success
-      deactivate LAPI
     end group
   end group
 
   note right of User
-  <b>Continues Primary OIDC Flow for Banking App</b>
+  <b>User returns to Sentry to continue</b>
+  primary OIDC flow for Banking App
   end note
 
   == 4. Resume Primary OIDC Flow ==
@@ -177,10 +191,16 @@ group Primary OIDC Flow [JPMDB ↔ Sentry]
   activate STS
   STS -> FRS: Forward request
   activate FRS
+
+  note right of FRS
+  <b>FR validates session and returns</b>
+  authorization code for primary flow
+  end note
+
   FRS -> STS: Return /authorize?code&state
   deactivate FRS
 
-  STS -> EC: Store scopes for code
+  STS -> EC: Store scopes for authorization code
   activate EC
   EC --> STS: Success
   deactivate EC
@@ -198,21 +218,26 @@ group Primary OIDC Flow [JPMDB ↔ Sentry]
   activate LAPI
   LAPI -> STS: Forward /token (code, code_verifier)
   activate STS
-  STS -> FRS: Forward /token
+  STS -> FRS: Forward /token request
   activate FRS
   FRS -> FRS: Validate session & PKCE
   FRS --> STS: Return access_token (aal=1)
   deactivate FRS
 
-  STS -> EC: Request stored scopes
+  STS -> EC: Request stored scopes for code
   activate EC
   EC --> STS: Return scopes
   deactivate EC
 
   STS -> EA: TokenExchange with scopes
+  note over STS, EA
+  <b>EA uses JWT client assertion</b>
+  with Sentry keys for authentication
+  end note
   activate EA
-  EA -> EA: Validate entitlement (simulate Sarah)
+  EA -> EA: Validate Bobby's entitlement (simulate Sarah)
   EA -> EA: Switch sub=Bobby → Sarah
+  EA -> EA: Sign token with EA private key
   EA --> STS: Return EA token (sub=Sarah)
   deactivate EA
 
@@ -221,7 +246,7 @@ group Primary OIDC Flow [JPMDB ↔ Sentry]
   LAPI -> JPMDB: Return access_token
   deactivate LAPI
 
-  JPMDB -> JPMDB: Verify token & show page
+  JPMDB -> JPMDB: Verify token & show protected page
   JPMDB -> User: Present protected content
   deactivate JPMDB
 end group

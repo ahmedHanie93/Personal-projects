@@ -6,21 +6,23 @@
 without knowing their password.
 
 **PKCE (Proof Key for Code Exchange)** is an extra security layer that prevents attackers from using stolen
-authorization codes. It is especially used for public clients.
+authorization codes.
 
-**Simple Flow:**
+**JWT Assertion** adds client authentication using signed JSON Web Tokens, providing an additional layer of security
+beyond basic client credentials.
 
-1. Client generates a `code_verifier` and derives a `code_challenge`.
-2. User is redirected to the Authorization Server with `code_challenge`.
-3. User authenticates with IDP.
-4. Authorization Server issues an **authorization code**.
-5. Client exchanges **authorization code** + `code_verifier` for **access token**.
+** Simple Flow:**
 
-**PKCE ensures only the client that started the flow can complete it.**
+1. Client generates a `code_verifier` and derives a `code_challenge`
+2. Client creates **JWT assertion** signed with its private key
+3. User is redirected to Authorization Server with `code_challenge`
+4. User authenticates with IDP
+5. Authorization Server issues **authorization code**
+6. Client exchanges **authorization code** + `code_verifier` + **JWT assertion** for **access token**
 
 ---
 
-## 2. PlantUML Sequence Diagram
+## 2. PlantUML Sequence Diagram with JWT Assertion
 
 ```puml
 @startuml
@@ -31,7 +33,7 @@ skinparam ParticipantBorderColor #2E5F8A
 skinparam ParticipantBackgroundColor #F0F8FF
 skinparam NoteBackgroundColor #FFFACD
 
-title OAuth2 + PKCE with Sentry (Authorization Server) and IDA (Identity Provider)
+title OAuth2 + PKCE with JWT Assertion (Sentry + IDA)
 
 autonumber
 
@@ -40,63 +42,75 @@ participant "JPMDB Banking App\n(Client)" as App #FFD700
 participant "Sentry\n(Authorization Server)" as Sentry #90EE90
 participant "IDA\n(Identity Provider)" as IDP #FFB6C1
 
-' === Activation ===
-User -> App: **Activate session** / Open JPMDB App
-note right of App
-Session starts
-end note
+' === Client Preparation ===
+App -> App: Generate **code_verifier**\nand **code_challenge**
+App -> App: Create **JWT Assertion**\n(signed with private key)
 
 ' === Authorization Request ===
 App -> User: Redirect to Sentry with **code_challenge**
 User -> Sentry: Arrives at Authorization Endpoint
 
-group Authentication Delegation
+group Authentication Delegation with JWT
     Sentry -> IDP: Redirect Bobby to IDA login
     User -> IDP: Enter username/password + MFA
-    IDP -> Sentry: Confirm authentication success ✅
+    IDP -> Sentry: **JWT ID Token** + User claims
+    note right of Sentry
+Verify IDP signature
+Validate user claims
+end note
 end
 
 Sentry -> User: Redirect back with **Authorization Code**
-note right of User
-Temporary note: must be exchanged for token
-end note
 User -> App: Deliver **Authorization Code**
 
-group Token Exchange
-    App -> Sentry: Send **Authorization Code** + **code_verifier**
+group Token Exchange with JWT Assertion
+    App -> Sentry: Send **Authorization Code** + **code_verifier** + **JWT Client Assertion**
     note right of Sentry
-Verify PKCE challenge
+1. Verify PKCE challenge
+2. Validate JWT signature
+3. Check client credentials
 end note
-    Sentry -> App: Issue **Access Token** (+ ID Token, Refresh Token)
+    Sentry -> App: Issue **Access Token** + **ID Token** + **Refresh Token**
 end
 
 ' === Resource Access ===
-App -> User: Use **Access Token** to call APIs (e.g., fetch account details)
+App -> App: Verify **ID Token** signature\nand extract user claims
+App -> User: Use **Access Token** to call APIs\n(e.g., fetch account details)
+
+' === Token Refresh (Optional) ===
+group Token Refresh with JWT
+    App -> App: **Access Token** expired
+    App -> Sentry: Send **Refresh Token** + **JWT Client Assertion**
+    Sentry -> App: New **Access Token** + **Refresh Token**
+end
 
 ' === Deactivation ===
 User -> App: **Deactivate session** / Logout
-App -> Sentry: Revoke **Access Token** / End session
+App -> Sentry: Revoke tokens using **JWT Assertion**
 note right of Sentry
 Tokens invalidated
+Session ended
 end note
 
 @enduml
-````
+```
 
 ---
 
 ## 3. Key Concepts
 
-| Concept                           | Definition / Usage                                                                                                                                    | 
-|-----------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------| 
-| **Authorization Server (Sentry)** | Issues tokens (authorization code, access token, ID token) after authenticating the user via IDP.                                                     | 
-| **Identity Provider (IDP / IDA)** | Authenticates user credentials and confirms identity to the authorization server.                                                                     | 
-| **Client (Banking App / JPMDB)**  | Application requesting access on behalf of the user. (Never sees Password)                                                                            |
-| **Authorization Code**            | Temporary code proving user authenticated; used to request access token. (Short-lived; useless without code_verifier)                                 |
-| **Access Token**                  | Token used by the client to access protected APIs/resources.                                                                                          |
-| **ID Token**                      | JWT containing user identity claims from IDP.                                                                                                         |
-| **Refresh Token**                 | Token allowing client to get a new access token without re-login.                                                                                     |
-| **code_verifier**                 | Secret random string generated by client; used in PKCE. (Never leaves the client until token exchange)                                                |
-| **code_challenge**                | Hashed version of code_verifier sent to authorization server. (Verifies that the client requesting the token is the same one that initiated the flow) | 
+| Concept                           | Definition / Usage                                                                                    |
+|-----------------------------------|-------------------------------------------------------------------------------------------------------|
+| **Authorization Server (Sentry)** | Issues tokens after authenticating user via IDP and validating client JWT assertions                  |
+| **Identity Provider (IDP / IDA)** | Authenticates user credentials and returns JWT ID tokens with user claims                             |
+| **Client (Banking App)**          | Application requesting access; uses JWT assertions for secure client authentication                   |
+| **Authorization Code**            | Temporary code proving user authentication                                                            |
+| **Access Token**                  | Token used to access protected APIs/resources                                                         |
+| **ID Token**                      | **JWT** containing user identity claims from IDP, signed by IDP private key                           |
+| **Refresh Token**                 | Token allowing client to get new access tokens without re-login                                       |
+| **code_verifier**                 | Secret random string generated by client for PKCE                                                     |
+| **code_challenge**                | Hashed version of code_verifier sent to authorization server                                          |
+| **JWT Client Assertion**          | **Signed JWT** containing client credentials, used instead of client_secret for secure authentication |
+| **JWT ID Token**                  | **Signed JWT** from IDP containing user identity information                                          |
 
 ---

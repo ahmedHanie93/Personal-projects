@@ -7,14 +7,14 @@
 | **Title**            | Simulated Identity Parameter Strategy                                      |
 | **Status**           | Proposed                                                                   |
 | **Decision Drivers** | Security, Maintainability, Standards Alignment, Extensibility              |
-| **Affected Systems** | Sentry OAuth2/OIDC Authorization Flow, ForgeRock Agents, STS Token Service |
+| **Affected Systems** | PAID OAuth2/OIDC Authorization Flow, ForgeRock Agents, STS Token Service |
 
 ---
 
 ## 🎯 **Summary**
 
 To support identity simulation flows, the system must pass a **simulated user identifier (`simulated_id`)** from the
-client to Sentry’s authorization endpoint.
+client to PAID’s authorization endpoint.
 
 This ADR evaluates three design alternatives:
 

@@ -1,12 +1,12 @@
-# Sentry Platform: Right to Be Forgotten (RTBF) Orchestration Design RFC
+# PAID Platform: Right to Be Forgotten (RTBF) Orchestration Design RFC
 
 ## 1. Overview
 
-This RFC outlines the strategy for implementing the Right to Be Forgotten (RTBF) across the Sentry Identity Access Management platform. The approach applies to three key identity flows: inbound federation, machine-to-machine authentication, and OAuth-based user access. The design opts for **hard deletion** of identity records while retaining **decoupled audit logs** to satisfy regulatory compliance (e.g., GDPR, CCPA).
+This RFC outlines the strategy for implementing the Right to Be Forgotten (RTBF) across the PAID Identity Access Management platform. The approach applies to three key identity flows: inbound federation, machine-to-machine authentication, and OAuth-based user access. The design opts for **hard deletion** of identity records while retaining **decoupled audit logs** to satisfy regulatory compliance (e.g., GDPR, CCPA).
 
 ## 2. Goals
 
-* Fully delete user or client identity data from Sentry while retaining non-PII audit logs.
+* Fully delete user or client identity data from PAID while retaining non-PII audit logs.
 * Provide consistent RTBF behavior across identity types and authentication flows.
 * Ensure downstream systems can be notified of deletions.
 * Maintain legal compliance (GDPR Art. 17, CCPA §1798.105).
@@ -25,7 +25,7 @@ This RFC outlines the strategy for implementing the Right to Be Forgotten (RTBF)
 * **Flow:** Certificate-based authentication to access JPM payments API
 * **RTBF Trigger:** PDP client revokes access or requests deletion
 
-### 3.3 Direct Registration & OAuth (e.g., Sentry -> Digital Banking)
+### 3.3 Direct Registration & OAuth (e.g., PAID -> Digital Banking)
 
 * **Identity Type:** Native human user
 * **Flow:** OAuth2 login to access protected JPM services
@@ -94,15 +94,15 @@ flowchart TD
 sequenceDiagram
     participant User
     participant Scotia (IdP)
-    participant Sentry
+    participant PAID
     participant JP Merchant Services
 
     User->>Scotia: Requests account deletion
-    Scotia->>Sentry: RTBF request (via API)
-    Sentry->>Sentry: Delete federated user identity
-    Sentry->>Sentry: Revoke sessions, entitlements
-    Sentry->>JP Merchant Services: Notify for RTBF (optional)
-    Sentry->>Sentry: Log Forget Receipt
+    Scotia->>PAID: RTBF request (via API)
+    PAID->>PAID: Delete federated user identity
+    PAID->>PAID: Revoke sessions, entitlements
+    PAID->>JP Merchant Services: Notify for RTBF (optional)
+    PAID->>PAID: Log Forget Receipt
 ```
 
 ### 5.3 M2M RTBF (PDP)
@@ -110,14 +110,14 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     participant PDP Admin
-    participant Sentry
+    participant PAID
     participant JPM Payments API
 
-    PDP Admin->>Sentry: RTBF request for machine identity
-    Sentry->>Sentry: Delete client identity & entitlement
-    Sentry->>Sentry: Revoke certificate
-    Sentry->>JPM Payments API: (Optional) Notify
-    Sentry->>Sentry: Log Forget Receipt
+    PDP Admin->>PAID: RTBF request for machine identity
+    PAID->>PAID: Delete client identity & entitlement
+    PAID->>PAID: Revoke certificate
+    PAID->>JPM Payments API: (Optional) Notify
+    PAID->>PAID: Log Forget Receipt
 ```
 
 ### 5.4 OAuth RTBF (Digital Banking)
@@ -125,13 +125,13 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     participant User
-    participant Sentry
+    participant PAID
     participant Digital Banking
 
-    User->>Sentry: Requests account deletion via UI/API
-    Sentry->>Sentry: Delete identity, entitlements, sessions
-    Sentry->>Digital Banking: RTBF notification
-    Sentry->>Sentry: Log Forget Receipt
+    User->>PAID: Requests account deletion via UI/API
+    PAID->>PAID: Delete identity, entitlements, sessions
+    PAID->>Digital Banking: RTBF notification
+    PAID->>PAID: Log Forget Receipt
 ```
 
 ### 5.5 RTBF Receipt Ledger (Audit View)
