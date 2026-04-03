@@ -1,5 +1,5 @@
 @startuml
-title Institutional Onboarding - Clean Architecture Flow
+title Institutional Onboarding - Enriched Architecture Flow
 
 skinparam componentStyle rectangle
 skinparam shadowing false
@@ -76,15 +76,84 @@ READY --> FUNDING
 FUNDING --> COMPLETE
 COMPLETE --> REVIEW
 
-' ==== NOTES ====
+' ==== ENRICHED NOTES ====
+
 note right of CAM
-(2) CAM orchestrates onboarding today.
-Future: centralized workflow engine.
+(2) CENTRAL ORCHESTRATION PROBLEM
+
+- CAM coordinates across multiple stakeholders:
+  CAM, CARM, CPM, KYC, Legal, PD, Ops, Fee Billing
+
+- No unified workflow tool today
+- Manual tracking via emails / checklists
+
+→ Leads to lack of visibility and delays
+→ Target: centralized workflow orchestration layer
+end note
+
+note right of KYC
+(3.1) COMPLIANCE CHALLENGES
+
+- AML / KYC processes are complex and time-consuming
+- Heavy manual validation and document collection
+- No consistent global process
+
+→ Key contributor to onboarding delays
+end note
+
+note right of IMA
+(3.3) LEGAL / IMA BOTTLENECK
+
+- IMA negotiation is fragmented
+- Back-and-forth between Legal, Sales, Client
+- Lack of standardized clause usage
+
+→ Major delay driver in onboarding
+
+→ Target:
+- Clause library
+- Negotiation workflow
+- Approval & escalation automation
+end note
+
+note right of ACCOUNT
+(3.5) OPERATIONS COMPLEXITY
+
+- Account setup ownership split between CAM & Product Delivery
+- Dependencies on multiple downstream setups
+
+→ Lack of clarity causes delays and rework
 end note
 
 note right of SIGNOFF
-(4) Critical gate:
-No funding without IMA sign-off.
+(4) CRITICAL CONTROL GATE
+
+- IMA must be signed before funding
+- Dependencies from Compliance, Legal, Ops converge here
+
+→ No real-time tracking of readiness across systems
+→ High coordination overhead
+
+→ This is the key bottleneck checkpoint
+end note
+
+note bottom
+GLOBAL PROBLEM STATEMENT
+
+- Disconnected systems (Appway, PANDA, Revport, etc.)
+- Duplicate data entry across platforms
+- No golden source of truth
+- No consistent unique identifier (e.g. EPI not fully leveraged)
+- Limited real-time reporting / MIS
+
+→ Results in inefficiency, errors, and poor client experience
+
+TARGET STATE VISION
+
+- Unified onboarding workflow layer
+- Golden source data model
+- Integrated systems with real-time updates
+- End-to-end visibility and tracking
 end note
 
 @enduml
