@@ -4,48 +4,51 @@ title Institutional Onboarding - Clean Architecture Flow
 skinparam componentStyle rectangle
 skinparam shadowing false
 
-' ==== ENTRY LAYER ====
-package "Client / Sales" {
-  [Mandate Awarded (SFDC)] as SFDC
+' ==== ENTRY ====
+package "1. Client / Sales" {
+  [1. Mandate Awarded (SFDC)] as SFDC
 }
 
-' ==== ORCHESTRATION LAYER ====
-package "Orchestration Layer" {
-  [CAM / Workflow Engine - Initiate & Track] as CAM
+' ==== ORCHESTRATION ====
+package "2. Orchestration (CAM / Workflow)" {
+  [2. Initiate Onboarding & Assign CAM] as CAM
 }
 
-' ==== EXECUTION LAYERS ====
-package "Compliance" {
-  [KYC / AML Process (Appway)] as KYC
-  [Risk Approval] as RISK
-}
+' ==== EXECUTION ====
+package "3. Parallel Execution" {
 
-package "Legal" {
-  [IMA Negotiation (Compose)] as IMA
-  [Clause Library] as CLAUSE
-}
+  package "3A. Compliance" {
+    [3.1 KYC / AML (Appway)] as KYC
+    [3.2 Risk Approval] as RISK
+  }
 
-package "Operations" {
-  [Account Setup (PANDA)] as ACCOUNT
-  [Guidelines Setup (Beacon)] as GUIDELINES
-}
+  package "3B. Legal" {
+    [3.3 IMA Negotiation (Compose)] as IMA
+    [3.4 Clause Library] as CLAUSE
+  }
 
-package "Supporting Processes" {
-  [Fee Setup (Revport)] as FEE
-  [Reporting Setup (Synopsis)] as REPORT
+  package "3C. Operations" {
+    [3.5 Account Setup (PANDA)] as ACCOUNT
+    [3.6 Guidelines Setup (Beacon)] as GUIDELINES
+  }
+
+  package "3D. Supporting" {
+    [3.7 Fee Setup (Revport)] as FEE
+    [3.8 Reporting Setup (Synopsis)] as REPORT
+  }
 }
 
 ' ==== CONTROL GATE ====
-package "Control Gate" {
-  [IMA Sign-Off] as SIGNOFF
+package "4. Control Gate" {
+  [4. IMA Sign-Off] as SIGNOFF
 }
 
 ' ==== COMPLETION ====
-package "Completion" {
-  [Account Ready - IMA + Setup Complete] as READY
-  [Initial Funding] as FUNDING
-  [Onboarding Complete (CRM Updated)] as COMPLETE
-  [Post-Onboarding Review] as REVIEW
+package "5. Completion" {
+  [5.1 Account Ready] as READY
+  [5.2 Initial Funding] as FUNDING
+  [5.3 Onboarding Complete (CRM Updated)] as COMPLETE
+  [5.4 Post-Onboarding Review] as REVIEW
 }
 
 ' ==== FLOW ====
@@ -75,12 +78,12 @@ COMPLETE --> REVIEW
 
 ' ==== NOTES ====
 note right of CAM
-CAM orchestrates onboarding manually today.
-Target is a workflow-driven orchestration layer.
+(2) CAM orchestrates onboarding today.
+Future: centralized workflow engine.
 end note
 
 note right of SIGNOFF
-Critical dependency:
+(4) Critical gate:
 No funding without IMA sign-off.
 end note
 
