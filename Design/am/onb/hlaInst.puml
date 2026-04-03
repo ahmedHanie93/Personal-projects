@@ -1,0 +1,87 @@
+@startuml
+title Institutional Onboarding - Clean Architecture Flow
+
+skinparam componentStyle rectangle
+skinparam shadowing false
+
+' ==== ENTRY LAYER ====
+package "Client / Sales" {
+  [Mandate Awarded (SFDC)] as SFDC
+}
+
+' ==== ORCHESTRATION LAYER ====
+package "Orchestration Layer" {
+  [CAM / Workflow Engine - Initiate & Track] as CAM
+}
+
+' ==== EXECUTION LAYERS ====
+package "Compliance" {
+  [KYC / AML Process (Appway)] as KYC
+  [Risk Approval] as RISK
+}
+
+package "Legal" {
+  [IMA Negotiation (Compose)] as IMA
+  [Clause Library] as CLAUSE
+}
+
+package "Operations" {
+  [Account Setup (PANDA)] as ACCOUNT
+  [Guidelines Setup (Beacon)] as GUIDELINES
+}
+
+package "Supporting Processes" {
+  [Fee Setup (Revport)] as FEE
+  [Reporting Setup (Synopsis)] as REPORT
+}
+
+' ==== CONTROL GATE ====
+package "Control Gate" {
+  [IMA Sign-Off] as SIGNOFF
+}
+
+' ==== COMPLETION ====
+package "Completion" {
+  [Account Ready - IMA + Setup Complete] as READY
+  [Initial Funding] as FUNDING
+  [Onboarding Complete (CRM Updated)] as COMPLETE
+  [Post-Onboarding Review] as REVIEW
+}
+
+' ==== FLOW ====
+SFDC --> CAM
+
+CAM --> KYC
+CAM --> IMA
+CAM --> ACCOUNT
+
+KYC --> RISK
+RISK --> SIGNOFF
+
+IMA --> CLAUSE
+CLAUSE --> SIGNOFF
+
+ACCOUNT --> GUIDELINES
+GUIDELINES --> SIGNOFF
+
+SIGNOFF --> FEE
+SIGNOFF --> REPORT
+
+SIGNOFF --> READY
+
+READY --> FUNDING
+FUNDING --> COMPLETE
+COMPLETE --> REVIEW
+
+' ==== NOTES ====
+note right of CAM
+CAM orchestrates onboarding manually today.
+Target is a workflow-driven orchestration layer.
+end note
+
+note right of SIGNOFF
+Critical dependency:
+No funding without IMA sign-off.
+end note
+
+@enduml
